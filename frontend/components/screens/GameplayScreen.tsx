@@ -667,16 +667,9 @@ export default function GameplayScreen({ roomCode }: GameplayScreenProps) {
     try {
       setIsSendingChat(true);
       setError(null);
-      const accessToken = typeof window !== "undefined" ? localStorage.getItem("access_token") || "" : "";
-      if (!accessToken) {
-        throw new Error("Thiếu access token để gửi chat realtime.");
-      }
 
-      if (!wsService.isConnected()) {
-        await wsService.connect(accessToken, roomCode);
-      }
-
-      wsService.emit("CHAT_MESSAGE", { message: text });
+      // Use REST API to send chat message (backend will broadcast via WebSocket)
+      await gameService.postChatMessage(roomCode, { message: text });
       setChatInput("");
     } catch (err) {
       setError(getErrorMessage(err, "Không gửi được tin nhắn. Vui lòng thử lại."));

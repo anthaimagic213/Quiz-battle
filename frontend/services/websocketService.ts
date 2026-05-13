@@ -1,10 +1,18 @@
 import { WSRoomEvent } from "@/types";
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
-
 function buildWebSocketUrl(roomCode: string, token?: string) {
-  const normalizedBaseUrl = WS_URL.startsWith("http") ? WS_URL.replace(/^http/, "ws") : WS_URL;
-  const url = new URL(normalizedBaseUrl);
+  if (typeof window === "undefined") {
+    throw new Error("WebSocket can only be used in browser environment");
+  }
+
+  // Auto-detect protocol and hostname from current page
+  const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+  const host = window.location.host; // includes hostname:port
+  
+  // Build WebSocket URL using current page's host
+  const wsUrl = `${protocol}://${host}`;
+  
+  const url = new URL(wsUrl);
   url.pathname = `/ws/game/${roomCode}`;
 
   if (token) {

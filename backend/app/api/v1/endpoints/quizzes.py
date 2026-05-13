@@ -15,7 +15,7 @@ from app.services.quiz_service import (
 router = APIRouter(prefix="/quizzes", tags=["quizzes"])
 
 
-@router.get("/", response_model=list)
+@router.get("", response_model=list)
 def list_quizzes(
     current_user: UUID = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -32,7 +32,7 @@ def get_quiz(
     return get_quiz_detail_service(quiz_id, current_user, db)
 
 
-@router.post("/", response_model=dict, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=dict, status_code=status.HTTP_201_CREATED)
 def create_quiz(payload: dict, current_user: UUID = Depends(get_current_user), db: Session = Depends(get_db)):
     return create_quiz_with_questions(payload, current_user, db)
 

@@ -24,7 +24,7 @@ from app.services.game_service import (
 router = APIRouter(prefix="/rooms", tags=["rooms"])
 
 
-@router.post("/", response_model=dict, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=dict, status_code=status.HTTP_201_CREATED)
 async def create_room(payload: dict, current_user: UUID = Depends(get_current_user), db: Session = Depends(get_db)):
     return create_room_service(payload, current_user, db)
 

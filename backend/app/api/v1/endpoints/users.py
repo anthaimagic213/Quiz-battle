@@ -19,7 +19,7 @@ def _serialize_user(user: User):
     }
 
 
-@router.get("/", response_model=list)
+@router.get("", response_model=list)
 def list_users(db: Session = Depends(get_db)):
     users = db.query(User).all()
     return [_serialize_user(user) for user in users]

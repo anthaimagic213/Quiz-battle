@@ -22,11 +22,24 @@ apiClient.interceptors.request.use(
   (error: AxiosError) => Promise.reject(error)
 );
 
-// Response interceptor to handle token refresh
+// Response interceptor to handle errors and token refresh
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Log successful API calls in debug mode
+    if (process.env.NODE_ENV === "development") {
+      console.log(`[API] ${response.config.method?.toUpperCase()} ${response.config.url} - ${response.status}`);
+    }
+    return response;
+  },
   async (error: AxiosError) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
+
+    // Log API errors
+    console.error(`[API Error] ${originalRequest?.method?.toUpperCase()} ${originalRequest?.url}`, {
+      status: error.response?.status,
+      message: error.message,
+      data: error.response?.data,
+    });
 
     // Handle 401 (Unauthorized) - try to refresh token
     if (error.response?.status === 401 && !originalRequest._retry && typeof window !== "undefined") {

@@ -174,12 +174,31 @@ def _player_payload_from_cache(player_payload: dict) -> dict:
 	}
 
 
-def _calculate_points(is_correct: bool, response_time: float | int | None, question_points: int | None) -> int:
+def _calculate_points(
+	is_correct: bool,
+	response_time: float | int | None,
+	question_points: int | None,
+	question_time_limit: float | int | None,
+) -> int:
 	if not is_correct:
 		return 0
 
-	# Correct: return full question points
-	return question_points or 0
+	base_points = int(question_points or 0)
+	if base_points <= 0:
+		return 0
+
+	time_taken = float(response_time or 0)
+	if time_taken <= 3:
+		return base_points
+
+	max_time = float(question_time_limit or 0)
+	if max_time > 3:
+		# Keep scoring bounded by the question timer for fairer calculation.
+		time_taken = min(time_taken, max_time)
+
+	# After 3s, points still decrease inversely with time but with a gentler slope.
+	inverse_multiplier = min(1.0,1 - time_taken / question_time_limit + 0.1) if question_time_limit and question_time_limit > 0 else 1.0
+	return max(int(base_points * inverse_multiplier), 1)
 
 
 def _build_live_score_map(room: GameRoom, db: Session) -> dict[str, int]:
@@ -199,6 +218,7 @@ def _build_live_score_map(room: GameRoom, db: Session) -> dict[str, int]:
 			answer.is_correct,
 			answer.response_time,
 			question.points,
+			question.time_limit,
 		)
 
 	return score_map
@@ -1320,13 +1340,9 @@ async def submit_answer(room_code: str, current_user: UUID, payload: dict, db: S
 		is_correct = str(selected_option_id) == correct_option_id
 		response_time = float(payload.get("response_time", 0) or 0)
 		question_points = int(game_question.get("points") or 0)
+		question_time_limit = float(game_question.get("time_limit") or 0)
 
-		points = 0
-		if is_correct:
-			if response_time < 3:
-				points = question_points
-			else:
-				points = max(int(question_points * 0.5), 1)
+		points = _calculate_points(is_correct, response_time, question_points, question_time_limit)
 
 		redis_manager.store_answer(
 			room_code,
@@ -1423,13 +1439,7 @@ async def submit_answer(room_code: str, current_user: UUID, payload: dict, db: S
 	response_time = float(payload.get("response_time", 0) or 0)
 
 	# Calculate score
-	points = 0
-	if is_correct:
-		# Time-based scoring: if answered in < 3 seconds, get full points, otherwise reduced
-		if response_time < 3:
-			points = question.points
-		else:
-			points = max(int(question.points * 0.5), 1)
+	points = _calculate_points(is_correct, response_time, question.points, question.time_limit)
 
 	# Create PlayerAnswer
 	answer = PlayerAnswer(

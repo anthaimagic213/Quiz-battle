@@ -112,9 +112,10 @@ export default function AccountModal({ isOpen, onClose }: AccountModalProps) {
       setIsUploadingAvatar(true);
       setError(null);
       setMessage(null);
-      const result = await authService.uploadAvatar(file);
-      setAvatarUrl(result.avatar_url);
-      setMessage("Đã tải ảnh lên. Bấm Lưu thông tin để cập nhật avatar.");
+      const updatedUser = await authService.uploadAvatar(file);
+      updateUser(updatedUser);
+      setAvatarUrl(updatedUser.avatar_url || "");
+      setMessage("Đã cập nhật ảnh đại diện.");
     } catch (err) {
       setError(getErrorMessage(err, "Không tải được ảnh đại diện."));
     } finally {

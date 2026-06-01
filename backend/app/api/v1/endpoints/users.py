@@ -80,7 +80,12 @@ async def upload_my_avatar(
     request: Request,
     file: UploadFile = File(...),
     current_user: UUID = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
+    user = db.query(User).filter(User.id == current_user).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
     extension = ALLOWED_AVATAR_TYPES.get(file.content_type or "")
     if not extension:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Avatar must be an image file")
@@ -99,7 +104,10 @@ async def upload_my_avatar(
 
     avatar_path = f"/static/uploads/avatars/{filename}"
     avatar_url = f"{str(request.base_url).rstrip('/')}{avatar_path}"
-    return {"avatar_url": avatar_url}
+    user.avatar_url = avatar_url
+    db.commit()
+    db.refresh(user)
+    return _serialize_user(user)
 
 
 @router.put("/me/password", response_model=dict)

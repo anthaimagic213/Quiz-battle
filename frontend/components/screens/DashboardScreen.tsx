@@ -7,6 +7,8 @@ import { quizService } from "@/services/quizService";
 import { statisticsService } from "@/services/statisticsService";
 import { Quiz, StatisticsResponse } from "@/types";
 import GuidedTour, { GuidedTourStep } from "@/components/common/GuidedTour";
+import FriendsPanel from "@/components/social/FriendsPanel";
+import "@/styles/friends-panel.css";
 
 const recentActivities = [
   {
@@ -143,6 +145,7 @@ export default function DashboardScreen() {
   const [statisticsSummary, setStatisticsSummary] = useState<StatisticsResponse["summary"] | null>(null);
   const [myQuizPage, setMyQuizPage] = useState(1);
   const [publicQuizPage, setPublicQuizPage] = useState(1);
+  const [isFriendsPanelOpen, setIsFriendsPanelOpen] = useState(false);
 
   // Fix hydration error: update greeting after client hydration
   useEffect(() => {
@@ -347,6 +350,13 @@ export default function DashboardScreen() {
           <div className="hero-cta">
             <button className="btn-hero-primary" onClick={() => router.push("/editor")} data-tour="create-quiz">
               + Tạo quiz mới
+            </button>
+            <button
+              className="btn-hero-secondary"
+              onClick={() => setIsFriendsPanelOpen(true)}
+              style={{ background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)" }}
+            >
+              👥 Bạn bè & Chat
             </button>
             <div className="hero-search">
               <input
@@ -711,6 +721,10 @@ export default function DashboardScreen() {
         isOpen={isTourOpen}
         onClose={handleCloseTour}
         storageKey={DASHBOARD_TOUR_DONE_KEY}
+      />
+      <FriendsPanel
+        isOpen={isFriendsPanelOpen}
+        onClose={() => setIsFriendsPanelOpen(false)}
       />
     </div>
   );

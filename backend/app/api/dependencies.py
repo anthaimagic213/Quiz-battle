@@ -2,6 +2,7 @@ from fastapi import Depends, Header
 from uuid import UUID
 from app.core.security import decode_token
 from app.core.exceptions import InvalidToken
+from app.db.session import get_db
 
 async def get_current_user(authorization: str = Header(None)) -> UUID:
     if not authorization:

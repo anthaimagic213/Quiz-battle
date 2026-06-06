@@ -35,3 +35,11 @@ class User(BaseModel):
 
     # User stats relationship
     user_stats = relationship("UserStats", back_populates="user", uselist=False, cascade="all, delete-orphan")
+
+    # Social relationships
+    friend_requests_sent = relationship("FriendRequest", foreign_keys="FriendRequest.requester_id", back_populates="requester", cascade="all, delete-orphan")
+    friend_requests_received = relationship("FriendRequest", foreign_keys="FriendRequest.addressee_id", back_populates="addressee", cascade="all, delete-orphan")
+    friendships_1 = relationship("Friendship", foreign_keys="Friendship.user_id_1", back_populates="user_1", cascade="all, delete-orphan")
+    friendships_2 = relationship("Friendship", foreign_keys="Friendship.user_id_2", back_populates="user_2", cascade="all, delete-orphan")
+    conversation_members = relationship("ConversationMember", back_populates="user", cascade="all, delete-orphan")
+    messages = relationship("Message", back_populates="sender", cascade="all, delete-orphan")

@@ -12,6 +12,11 @@ from app.models.game.player_answers import PlayerAnswer
 from app.models.game.game_results import GameResult
 from app.models.game.chat_messages import ChatMessage
 from app.models.user_stat.user_stats import UserStats
+from app.models.social.friendships import Friendship
+from app.models.social.friend_requests import FriendRequest
+from app.models.social.conversations import Conversation
+from app.models.social.conversation_members import ConversationMember
+from app.models.social.messages import Message
 
 __all__ = [
     "Base",
@@ -28,4 +33,10 @@ __all__ = [
     "GameResult",
     "ChatMessage",
     "UserStats",
+    "Friendship",
+    "FriendRequest",
+    "Conversation",
+    "ConversationMember",
+    "Message",
 ]
+

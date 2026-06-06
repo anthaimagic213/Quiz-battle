@@ -1,9 +1,8 @@
 import os
-from uuid import uuid4
+from uuid import uuid4, UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status, Query
 from sqlalchemy.orm import Session
-from uuid import UUID
 
 from app.db.session import get_db
 from app.api.dependencies import get_current_user
@@ -40,6 +39,36 @@ def read_me(current_user: UUID = Depends(get_current_user), db: Session = Depend
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return _serialize_user(user)
+
+
+# ✅ ĐƯỢC ĐẨY LÊN ĐÂY: Hàm /search (đường dẫn cố định) phải nằm TRÊN hàm /{user_id}
+@router.get("/search", response_model=dict)
+def search_users(
+    q: str = Query(..., min_length=1),
+    page: int = Query(1, ge=1),
+    limit: int = Query(10, ge=1, le=50),
+    current_user: UUID = Depends(get_current_user), # Đã thêm dependency lấy user hiện tại
+    db: Session = Depends(get_db),
+):
+    """Search for users by username or full name (Đã đẩy lên trên để fix triệt để lỗi 422)"""
+    offset = (page - 1) * limit
+    search_term = f"%{q}%"
+
+    # Tìm kiếm user theo tên/username và loại trừ chính bản thân mình ra (User.id != current_user)
+    query = db.query(User).filter(
+        (User.id != current_user) & 
+        ((User.username.ilike(search_term)) | (User.full_name.ilike(search_term)))
+    )
+
+    total = query.count()
+    users = query.offset(offset).limit(limit).all()
+
+    return {
+        "users": [_serialize_user(user) for user in users],
+        "total": total,
+        "page": page,
+        "page_size": limit,
+    }
 
 
 @router.put("/me", response_model=dict)
@@ -131,6 +160,7 @@ def update_my_password(payload: dict, current_user: UUID = Depends(get_current_u
     return {"message": "Password updated successfully"}
 
 
+# 🔽 ĐÃ ĐẨY XUỐNG DƯỚI: Các hàm chứa path parameter động `{user_id}` luôn nằm dưới cùng file router
 @router.get("/{user_id}", response_model=dict)
 def get_user(user_id: UUID, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id == user_id).first()

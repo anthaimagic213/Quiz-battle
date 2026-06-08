@@ -1,13 +1,18 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
-import { UUID } from "crypto";
-import { friendsService, Friendship, FriendRequest, User } from "@/services/friendsService";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import {
+  friendsService,
+  Friendship,
+  FriendRequest,
+  User,
+} from "@/services/friendsService";
 import { conversationsService, Conversation } from "@/services/conversationsService";
-import  FriendsList  from "./FriendsList.tsx";
-import  FriendsSearch from "./FriendsSearch.tsx";
-import  FriendRequestInbox  from "./FriendRequestInbox.tsx";
-import  ChatWindow  from "./ChatWindow.tsx";
+import { useAuth } from "@/contexts/AuthContext";
+import FriendsList from "./FriendsList";
+import FriendsSearch from "./FriendsSearch";
+import FriendRequestInbox from "./FriendRequestInbox";
+import ChatWindow from "./ChatWindow";
 import "@/styles/friends-panel.css";
 
 type TabType = "friends" | "search" | "inbox";
@@ -22,26 +27,29 @@ interface FriendsPanelProps {
 }
 
 export default function FriendsPanel({ isOpen, onClose }: FriendsPanelProps) {
+  const { user: currentUser } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>("friends");
   const [friends, setFriends] = useState<Friendship[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
   const [pendingRequests, setPendingRequests] = useState<FriendRequest[]>([]);
-  const [selectedFriend, setSelectedFriend] = useState<SelectedFriend | null>(
-    null
-  );
+  const [selectedFriend, setSelectedFriend] = useState<SelectedFriend | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load friends and pending requests
+  const currentUserId = currentUser?.id;
+
   const loadData = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
-      const [friendsData, requestsData] = await Promise.all([
+      const [friendsData, requestsData, convsData] = await Promise.all([
         friendsService.getFriends(),
         friendsService.getPendingRequests(),
+        conversationsService.listConversations().catch(() => []),
       ]);
       setFriends(friendsData);
       setPendingRequests(requestsData);
+      setConversations(convsData);
     } catch (err) {
       setError("Không thể tải danh sách bạn bè. Vui lòng thử lại.");
       console.error("Error loading friends:", err);
@@ -56,35 +64,38 @@ export default function FriendsPanel({ isOpen, onClose }: FriendsPanelProps) {
     }
   }, [isOpen, loadData]);
 
+  // Build a quick lookup from friend_id -> conversationId (only direct chats).
+  const conversationByFriendId = useMemo(() => {
+    const map = new Map<string, string>();
+    if (!currentUserId) return map;
+    for (const conv of conversations) {
+      if (conv.type === "direct" && conv.other_member?.id) {
+        if (conv.other_member.id !== currentUserId) {
+          map.set(conv.other_member.id, conv.id);
+        }
+      }
+    }
+    return map;
+  }, [conversations, currentUserId]);
+
   const handleSelectFriend = async (friend: User) => {
     try {
-      setSelectedFriend({ ...friend, conversationId: undefined });
-      // Try to find or create conversation with this friend
-      const conversations = await conversationsService.listConversations();
-      const existingConversation = conversations.find((conv) => {
-        if (conv.type === "direct") {
-          // Check if this conversation is with the selected friend
-          return true; // Simplified for now, backend should filter
-        }
-        return false;
-      });
-
-      if (existingConversation) {
-        setSelectedFriend((prev) =>
-          prev
-            ? { ...prev, conversationId: existingConversation.id as string }
-            : null
-        );
-      } else {
-        // Create new direct conversation
-        const newConversation =
-          await conversationsService.createDirectConversation(friend.id);
-        setSelectedFriend((prev) =>
-          prev
-            ? { ...prev, conversationId: newConversation.id as string }
-            : null
-        );
+      setError(null);
+      const existingConvId = conversationByFriendId.get(friend.id);
+      if (existingConvId) {
+        setSelectedFriend({ ...friend, conversationId: existingConvId });
+        return;
       }
+
+      // No existing conversation — create (or fetch) the direct conversation.
+      const newConversation = await conversationsService.createDirectConversation(
+        friend.id
+      );
+      setConversations((prev) => {
+        if (prev.some((c) => c.id === newConversation.id)) return prev;
+        return [newConversation, ...prev];
+      });
+      setSelectedFriend({ ...friend, conversationId: newConversation.id });
     } catch (err) {
       setError("Không thể tạo cuộc trò chuyện. Vui lòng thử lại.");
       console.error("Error selecting friend:", err);
@@ -98,16 +109,17 @@ export default function FriendsPanel({ isOpen, onClose }: FriendsPanelProps) {
 
   const handleBackFromChat = () => {
     setSelectedFriend(null);
+    void loadData();
   };
 
   if (!isOpen) return null;
 
-  // Show chat window if friend is selected
-  if (selectedFriend && selectedFriend.conversationId) {
+  if (selectedFriend && selectedFriend.conversationId && currentUserId) {
     return (
       <ChatWindow
         friend={selectedFriend}
         conversationId={selectedFriend.conversationId}
+        currentUserId={currentUserId}
         onBack={handleBackFromChat}
       />
     );

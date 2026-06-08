@@ -13,10 +13,9 @@ from app.models.game.game_rooms import GameRoom
 from app.models.game.room_players import RoomPlayer
 from app.models.user_auth.users import User
 from app.services.redis_manager import redis_manager
-from app.websockets.connection_manager import ConnectionManager
+from app.websockets.connection_manager import manager
 
 router = APIRouter()
-manager = ConnectionManager()
 HOST_DISCONNECT_GRACE_SECONDS = 15
 pending_room_close_tasks: Dict[str, asyncio.Task] = {}
 

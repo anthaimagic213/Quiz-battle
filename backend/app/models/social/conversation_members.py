@@ -17,7 +17,7 @@ class ConversationMember(BaseModel):
     joined_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     conversation = relationship("Conversation", back_populates="members")
-    user = relationship("User")
+    user = relationship("User", back_populates="conversation_memberships")
 
     __table_args__ = (
         UniqueConstraint("conversation_id", "user_id", name="uq_conversation_member"),

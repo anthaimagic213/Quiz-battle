@@ -1,13 +1,22 @@
-import  apiClient  from "@/services/api";
-import { UUID } from "crypto";
+import apiClient from "@/services/api";
+
+export interface OtherMemberInfo {
+  id: string;
+  username: string;
+  full_name?: string | null;
+  avatar_url?: string | null;
+}
 
 export interface Conversation {
-  id: UUID;
+  id: string;
   type: string;
-  title?: string;
+  title?: string | null;
   created_at: string;
   updated_at: string;
-  last_message_at?: string;
+  last_message_at?: string | null;
+  other_member?: OtherMemberInfo | null;
+  last_message_preview?: string | null;
+  unread_count?: number;
 }
 
 export interface ConversationDetail extends Conversation {
@@ -16,26 +25,27 @@ export interface ConversationDetail extends Conversation {
 }
 
 export interface ConversationMember {
-  id: UUID;
-  conversation_id: UUID;
-  user_id: UUID;
+  id: string;
+  conversation_id: string;
+  user_id: string;
   role: string;
-  last_read_at?: string;
+  last_read_at?: string | null;
   joined_at: string;
 }
 
 export interface Message {
-  id: UUID;
-  conversation_id: UUID;
-  sender_id: UUID;
+  id: string;
+  conversation_id: string;
+  sender_id: string;
   sender_type: string;
   content: string;
   is_ai_generated: boolean;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, any> | null;
   created_at: string;
   updated_at: string;
-  sender_username?: string;
-  sender_avatar_url?: string;
+  sender_username?: string | null;
+  sender_full_name?: string | null;
+  sender_avatar_url?: string | null;
 }
 
 export interface MessageListResponse {
@@ -46,38 +56,43 @@ export interface MessageListResponse {
 }
 
 export const conversationsService = {
-  // List all conversations
+  // List all conversations for the current user (with other-member info embedded)
   async listConversations(): Promise<Conversation[]> {
     const response = await apiClient.get("/conversations");
     return response.data;
   },
 
-  // Create a direct conversation with a friend
-  async createDirectConversation(friendId: UUID): Promise<Conversation> {
-    const response = await apiClient.post("/conversations", {
-      type: "direct",
-      member_ids: [friendId],
-    });
+  // Create or get the 1-1 conversation with another user.
+  // Returns the conversation enriched with the other user's profile.
+  async createDirectConversation(friendId: string): Promise<Conversation> {
+    const response = await apiClient.post(`/conversations/direct/${friendId}`);
+    return response.data;
+  },
+
+  // Generic creator used by the original UI (kept for backwards compatibility).
+  async createConversation(payload: {
+    type: "direct" | "group";
+    member_ids?: string[];
+    title?: string;
+  }): Promise<Conversation> {
+    const response = await apiClient.post("/conversations", payload);
     return response.data;
   },
 
   // Get conversation details
-  async getConversation(conversationId: UUID): Promise<ConversationDetail> {
-    const response = await apiClient.get(
-      `/api/v1/conversations/${conversationId}`
-    );
+  async getConversation(conversationId: string): Promise<ConversationDetail> {
+    const response = await apiClient.get(`/conversations/${conversationId}`);
     return response.data;
   },
 
   // Update conversation (group title)
   async updateConversation(
-    conversationId: UUID,
+    conversationId: string,
     title: string
   ): Promise<Conversation> {
-    const response = await apiClient.put(
-      `/api/v1/conversations/${conversationId}`,
-      { title }
-    );
+    const response = await apiClient.put(`/conversations/${conversationId}`, {
+      title,
+    });
     return response.data;
   },
 };
@@ -85,42 +100,34 @@ export const conversationsService = {
 export const messagesService = {
   // Send message
   async sendMessage(
-    conversationId: UUID,
+    conversationId: string,
     content: string,
     metadata?: Record<string, any>
   ): Promise<Message> {
     const response = await apiClient.post(
-      `/api/v1/conversations/${conversationId}/messages`,
-      {
-        content,
-        metadata,
-      }
+      `/conversations/${conversationId}/messages`,
+      { content, metadata }
     );
     return response.data;
   },
 
   // Get messages
   async getMessages(
-    conversationId: UUID,
+    conversationId: string,
     limit: number = 50,
     offset: number = 0
   ): Promise<MessageListResponse> {
     const response = await apiClient.get(
-      `/api/v1/conversations/${conversationId}/messages`,
-      {
-        params: {
-          limit,
-          offset,
-        },
-      }
+      `/conversations/${conversationId}/messages`,
+      { params: { limit, offset } }
     );
     return response.data;
   },
 
   // Update message
   async updateMessage(
-    conversationId: UUID,
-    messageId: UUID,
+    conversationId: string,
+    messageId: string,
     content: string
   ): Promise<Message> {
     const response = await apiClient.put(
@@ -131,17 +138,14 @@ export const messagesService = {
   },
 
   // Delete message
-  async deleteMessage(
-    conversationId: UUID,
-    messageId: UUID
-  ): Promise<void> {
+  async deleteMessage(conversationId: string, messageId: string): Promise<void> {
     await apiClient.delete(
       `/conversations/${conversationId}/messages/${messageId}`
     );
   },
 
   // Mark conversation as read
-  async markAsRead(conversationId: UUID): Promise<void> {
+  async markAsRead(conversationId: string): Promise<void> {
     await apiClient.post(
       `/conversations/${conversationId}/messages/mark-read`,
       {}

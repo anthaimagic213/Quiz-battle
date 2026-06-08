@@ -78,6 +78,25 @@ class ConversationDetailResponse(ConversationResponse):
     message_count: Optional[int] = None
 
 
+class OtherMemberInfo(BaseModel):
+    id: UUID
+    username: str
+    full_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+
+
+class ConversationWithMemberResponse(ConversationResponse):
+    """Conversation payload that also exposes the other member's profile.
+
+    For direct chats the UI needs to know the friend's name/avatar to render
+    the chat header, so we attach that here as a convenience.
+    """
+
+    other_member: Optional[OtherMemberInfo] = None
+    last_message_preview: Optional[str] = None
+    unread_count: Optional[int] = None
+
+
 # ============= Conversation Member Schemas =============
 
 class ConversationMemberResponse(BaseModel):

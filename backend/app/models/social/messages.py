@@ -21,4 +21,4 @@ class Message(BaseModel):
     deleted_at = Column(DateTime, nullable=True)  # soft delete
 
     conversation = relationship("Conversation", back_populates="messages")
-    sender = relationship("User")
+    sender = relationship("User", back_populates="sent_messages")

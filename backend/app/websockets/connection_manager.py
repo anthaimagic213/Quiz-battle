@@ -74,6 +74,10 @@ class ConnectionManager:
 		if room_users == {}:
 			self.room_user_connections.pop(room_code, None)
 
-	async def broadcast(self, room_code: str, message: dict) -> None:
-		await self.broadcast_local(room_code, message)
-		await publish_ws_event(room_code, message)
+		async def broadcast(self, room_code: str, message: dict) -> None:
+			await self.broadcast_local(room_code, message)
+			await publish_ws_event(room_code, message)
+
+
+# Shared singleton instance used by both game_socket and chat_socket
+manager = ConnectionManager()

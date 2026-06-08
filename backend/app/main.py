@@ -6,7 +6,9 @@ from app.core.config import settings
 from app.db.base import Base
 from app.db.session import engine
 from app.api.v1.api import api_router
-from app.websockets.game_socket import manager, router as websocket_router
+from app.websockets.connection_manager import manager
+from app.websockets.game_socket import router as websocket_router
+from app.websockets.chat_socket import router as chat_socket_router
 from app.services.redis_pubsub import close_pubsub, listen_ws_events
 import asyncio
 import logging
@@ -106,6 +108,7 @@ async def shutdown_redis_pubsub():
 # Include routers
 app.include_router(api_router)
 app.include_router(websocket_router)
+app.include_router(chat_socket_router)
 
 @app.get("/")
 def read_root():

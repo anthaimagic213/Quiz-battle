@@ -77,6 +77,21 @@ export default function ChatWindow({
     socketRef.current = socket;
 
     const unsubscribe = socket.subscribe((event) => {
+      if (event.type === "CONNECTION_OPEN") {
+        setIsSocketReady(true);
+        return;
+      }
+
+      if (event.type === "CONNECTION_CLOSED") {
+        setIsSocketReady(false);
+        return;
+      }
+
+      if (event.type === "RECONNECT_SCHEDULED") {
+        // optionally show a small notice
+        return;
+      }
+
       if (event.type === "CHAT_MESSAGE") {
         const data = event.data as ChatMessageData;
         setMessages((prev) => {
@@ -101,6 +116,7 @@ export default function ChatWindow({
       } else if (event.type === "ERROR") {
         setError(event.data?.detail || "Đã xảy ra lỗi chat");
       } else if (event.type === "CONVERSATION_JOINED") {
+        // backend provides member list; treat as socket ready
         setIsSocketReady(true);
       }
     });
@@ -114,6 +130,20 @@ export default function ChatWindow({
       socketRef.current = null;
     };
   }, [conversationId]);
+
+  const handleManualReconnect = () => {
+    if (!socketRef.current) {
+      const token = localStorage.getItem("access_token");
+      if (!token) return;
+      socketRef.current = new ChatSocket({ conversationId, token });
+      // re-subscribe by forcing effect re-run is tricky; just connect and let existing subscription logic manage lifecycle when UI re-mounts
+      socketRef.current.connect();
+      setIsSocketReady(false);
+      return;
+    }
+
+    socketRef.current.connect();
+  };
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -175,6 +205,9 @@ export default function ChatWindow({
               {friend.full_name || friend.username}
             </div>
             <div className="chat-header-username">@{friend.username}</div>
+            <div className={`socket-status ${isSocketReady ? "online" : "offline"}`}>
+              {isSocketReady ? "Trực tuyến" : "Đang kết nối..."}
+            </div>
           </div>
         </div>
       </div>
@@ -202,9 +235,8 @@ export default function ChatWindow({
               return (
                 <div
                   key={message.id}
-                  className={`chat-message ${
-                    isMine ? "sent" : "received"
-                  }`}
+                  className={`chat-message ${isMine ? "sent" : "received"
+                    }`}
                 >
                   <div className="chat-message-avatar">
                     {message.sender_avatar_url ? (
@@ -255,6 +287,11 @@ export default function ChatWindow({
         >
           {isSending ? "⟳" : "📤"} Gửi
         </button>
+        {!isSocketReady && (
+          <button type="button" className="chat-reconnect-btn" onClick={handleManualReconnect}>
+            🔌 Thử kết nối lại
+          </button>
+        )}
       </form>
     </div>
   );

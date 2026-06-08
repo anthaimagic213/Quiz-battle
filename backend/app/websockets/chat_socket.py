@@ -14,6 +14,7 @@ import json
 import logging
 from typing import Any, Dict, Optional
 from uuid import UUID
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
@@ -143,6 +144,12 @@ async def _handle_chat_send(
             message_metadata=metadata,
         )
         db.add(message)
+        # Flush so SQLAlchemy assigns defaults (created_at) before we read them.
+        try:
+            db.flush()
+        except Exception:
+            # If flush fails, we will let the outer exception handler handle it.
+            pass
 
         conversation = (
             db.query(Conversation)
@@ -150,8 +157,9 @@ async def _handle_chat_send(
             .first()
         )
         if conversation is not None:
-            conversation.last_message_at = message.created_at
-            conversation.updated_at = message.created_at
+            ts = message.created_at or datetime.utcnow()
+            conversation.last_message_at = ts
+            conversation.updated_at = ts
 
         sender_member = (
             db.query(ConversationMember)
@@ -162,7 +170,7 @@ async def _handle_chat_send(
             .first()
         )
         if sender_member is not None:
-            sender_member.last_read_at = message.created_at
+            sender_member.last_read_at = message.created_at or datetime.utcnow()
 
         db.commit()
         db.refresh(message)

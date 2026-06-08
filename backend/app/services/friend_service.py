@@ -51,18 +51,32 @@ class FriendService:
                 detail="User not found"
             )
 
+        # Check for an existing friend request (any status).
         existing_request = db.query(FriendRequest).filter(
             and_(
                 FriendRequest.requester_id == requester_id,
                 FriendRequest.addressee_id == data.addressee_id,
-                FriendRequest.status == "pending"
             )
         ).first()
 
         if existing_request:
+            # If a pending request already exists, return a 400.
+            if existing_request.status == "pending":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Friend request already sent",
+                )
+            # If a previous request was rejected, reactivate it.
+            if existing_request.status == "rejected":
+                existing_request.status = "pending"
+                existing_request.updated_at = datetime.now(timezone.utc)
+                db.commit()
+                db.refresh(existing_request)
+                return FriendService._serialize_request(existing_request)
+            # If accepted, treat as already friends.
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Friend request already sent"
+                detail="Friend request already exists",
             )
 
         existing_friendship = db.query(Friendship).filter(
@@ -133,7 +147,7 @@ class FriendService:
             .options(joinedload(FriendRequest.requester))
             .filter(
                 and_(
-                    FriendRequest.addressee_id == user,
+                    FriendRequest.addressee_id == user.id,
                     FriendRequest.status == "pending"
                 )
             )
@@ -162,8 +176,8 @@ class FriendService:
                 )
                 .filter(
                     or_(
-                        Friendship.user_id_1 == user,
-                        Friendship.user_id_2 == user,
+                        Friendship.user_id_1 == user.id,
+                        Friendship.user_id_2 == user.id,
                     )
                 )
                 .all()
@@ -174,7 +188,7 @@ class FriendService:
                 # Determine the friend's ID based on the current user's ID
                 friend_id = (
                     friendship.user_id_2
-                    if friendship.user_id_1 == user
+                    if friendship.user_id_1 == user.id
                     else friendship.user_id_1
                 )
 

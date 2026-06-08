@@ -30,9 +30,12 @@ export interface ChatMessageData {
 export type ChatEvent =
   | { type: "CHAT_MESSAGE"; data: ChatMessageData }
   | {
-      type: "CONVERSATION_JOINED";
-      data: { conversation_id: string; member_ids: string[] };
-    }
+    type: "CONVERSATION_JOINED";
+    data: { conversation_id: string; member_ids: string[] };
+  }
+  | { type: "CONNECTION_OPEN" }
+  | { type: "CONNECTION_CLOSED" }
+  | { type: "RECONNECT_SCHEDULED"; data: { attempt: number; delay_ms: number } }
   | { type: "PONG"; data?: Record<string, any> }
   | { type: "ERROR"; data: { detail: string } }
   | { type: string; data: any };
@@ -82,6 +85,8 @@ class ChatSocket {
       this.reconnectAttempts = 0;
       this.startPing();
       this.flushMessageQueue();
+      // notify listeners that connection is open
+      this.listeners.forEach((cb) => cb({ type: "CONNECTION_OPEN", data: undefined }));
     };
 
     socket.onmessage = (ev) => {
@@ -101,6 +106,8 @@ class ChatSocket {
       this.stopPing();
       this.ws = null;
       if (this.isUnmounted) return;
+      // notify listeners that connection closed
+      this.listeners.forEach((cb) => cb({ type: "CONNECTION_CLOSED", data: undefined }));
       this.scheduleReconnect();
     };
   }
@@ -109,7 +116,12 @@ class ChatSocket {
     if (this.isUnmounted) return;
     if (this.reconnectTimer) return;
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 15000);
-    this.reconnectAttempts += 1;
+    const attempt = this.reconnectAttempts + 1;
+    this.reconnectAttempts = attempt;
+    // notify listeners a reconnect was scheduled
+    this.listeners.forEach((cb) =>
+      cb({ type: "RECONNECT_SCHEDULED", data: { attempt, delay_ms: delay } })
+    );
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect();

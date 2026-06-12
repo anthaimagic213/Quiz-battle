@@ -33,6 +33,8 @@ from app.websockets.connection_manager import manager
 
 router = APIRouter()
 
+# AI feature flag (mặc định tắt, bật khi đã test xong)
+AI_CHAT_ENABLED = True
 # In-memory mapping conversation_id -> set of connected user_ids. This is local
 # to a single backend instance; the manager already handles cross-instance
 # broadcasting via Redis Pub/Sub.
@@ -56,8 +58,7 @@ def _serialize_message(message: Message) -> Dict[str, Any]:
         "is_ai_generated": message.is_ai_generated,
         "metadata": message.message_metadata,
         "created_at": message.created_at.isoformat() if message.created_at else None,
-        "updated_at": message.updated_at.isoformat() if message.updated_at else None,
-        "sender": {
+        "updated_at": message.updated_at.isoformat() if message.updated_at else None,"sender": {
             "id": str(sender.id) if sender else str(message.sender_id),
             "username": sender.username if sender else None,
             "full_name": sender.full_name if sender else None,
@@ -185,10 +186,175 @@ async def _handle_chat_send(
     finally:
         db.close()
 
+        # Hook: embed vào chat_context_embeddings (best-effort, dùng session mới)
+    try:
+        from app.services.ingestion_service import ingest_message
+
+        with SessionLocal() as hook_db:
+            ingest_message(hook_db, message.id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Ingestion hook failed for chat message %s: %s", message.id, exc)
+
+    # Broadcast user message trước (UX: user thấy message ngay)
     await manager.broadcast(
         str(conversation_id),
         {"type": "CHAT_MESSAGE", "data": serialized},
     )
+
+    # Hook AI: trigger orchestrator nếu cần (chạy background, không block)
+    asyncio.create_task(
+        _maybe_trigger_ai(
+            conversation_id=conversation_id,
+            user_id=user_id,
+            user_message=content,
+            user_message_id=message.id,
+        )
+    )
+
+
+async def _maybe_trigger_ai(
+    conversation_id: UUID,
+    user_id: UUID,
+    user_message: str,
+    user_message_id: UUID,
+) -> None:
+    """
+    Check xem có cần trigger AI orchestrator không.
+    Chạy trong background task (create_task) để không block broadcast user message.
+    
+    Trigger conditions:
+    1. AI_CHAT_ENABLED = True (feature flag)
+    2. Message bắt đầu với "@ai " (explicit trigger)
+       HOẶC conversation.ai_enabled = True (auto trigger)
+    
+    Flow:
+    - Load recent history (5 messages)
+    - Run orchestrator (router → tool → composer → persist)
+    - Broadcast AI reply
+    """
+    if not AI_CHAT_ENABLED:
+        return
+
+    # Check trigger: "@ai " prefix hoặc conversation ai_enabled flag
+    explicit_trigger = user_message.lower().startswith("@ai ")
+    
+    db = SessionLocal()
+    try:
+        conversation = (
+            db.query(Conversation)
+            .filter(Conversation.id == conversation_id)
+            .first()
+        )
+        if conversation is None:
+            return
+        
+        # Check ai_enabled flag (cần thêm column này vào conversations table)
+        # Tạm thời chỉ dùng explicit trigger
+        auto_trigger = False  # conversation.ai_enabled if hasattr(conversation, 'ai_enabled') else False
+        
+        if not explicit_trigger and not auto_trigger:
+            return
+        
+        # Strip "@ai " prefix nếu có
+        query = user_message[4:].strip() if explicit_trigger else user_message
+        if not query:
+            return
+        
+        # Load recent history (5 messages gần nhất)
+        recent_messages = (
+            db.query(Message)
+            .filter(
+                Message.conversation_id == conversation_id,
+                Message.deleted_at.is_(None),
+                Message.id != user_message_id,  # Không bao gồm message hiện tại
+            )
+            .order_by(Message.created_at.desc())
+            .limit(5)
+            .all()
+        )
+        recent_messages.reverse()  # Oldest first
+        
+        history = [
+            {
+                "sender_type": msg.sender_type,
+                "content": msg.content,
+            }
+            for msg in recent_messages
+        ]
+        
+        # Run AI orchestrator
+        from app.services.ai_orchestrator import run_ai_orchestrator
+        
+        result = run_ai_orchestrator(
+            db=db,
+            conversation_id=conversation_id,
+            user_id=user_id,
+            user_message=query,
+            user_message_id=user_message_id,
+            recent_history=history,
+        )
+        
+        ai_message_id = result.get("ai_message_id")
+        if not ai_message_id:
+            # Orchestrator failed to persist AI message (logged internally)
+            # Broadcast một message tạm thời
+            await manager.broadcast(
+                str(conversation_id),
+                {
+                    "type": "CHAT_MESSAGE",
+                    "data": {
+                        "id": "temp-ai-error",
+                        "conversation_id": str(conversation_id),
+                        "sender_id": str(user_id),
+                        "sender_type": "ai",
+                        "content": result.get("answer", "Xin lỗi, tôi gặp sự cố khi xử lý."),
+                        "is_ai_generated": True,
+                        "metadata": {"error": result.get("error")},
+                        "created_at": datetime.utcnow().isoformat(),
+                    },
+                },
+            )
+            return
+        
+        # Load AI message từ DB để broadcast đúng format
+        ai_message = db.query(Message).filter(Message.id == ai_message_id).first()
+        if ai_message:
+            serialized = _serialize_message(ai_message)
+            await manager.broadcast(
+                str(conversation_id),
+                {"type": "CHAT_MESSAGE", "data": serialized},
+            )
+        
+        logger.info(
+            f"AI reply sent: conversation={conversation_id}, "
+            f"intent={result.get('intent')}, "
+            f"total_ms={result.get('timings', {}).get('total_ms')}"
+        )
+    
+    except Exception as exc:
+        logger.exception("AI trigger failed: %s", exc)
+        # Best-effort: broadcast error message
+        try:
+            await manager.broadcast(
+                str(conversation_id),
+                {
+                    "type": "CHAT_MESSAGE",
+                    "data": {
+                        "id": "temp-ai-error",
+                        "conversation_id": str(conversation_id),
+                        "sender_id": str(user_id),
+                        "sender_type": "ai",
+                        "content": "Xin lỗi, tôi gặp lỗi khi xử lý yêu cầu.",
+                        "is_ai_generated": True,
+                        "metadata": {"error": str(exc)[:200]},
+                        "created_at": datetime.utcnow().isoformat(),
+                    },
+                },
+            )
+        except Exception:
+            pass
+    finally:
+        db.close()
 
 
 async def _handle_mark_read(
@@ -277,3 +443,4 @@ async def chat_socket(
         pass
     finally:
         manager.disconnect(str(conv_uuid), str(user_id), websocket)
+

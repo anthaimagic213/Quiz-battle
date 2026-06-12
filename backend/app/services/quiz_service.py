@@ -144,6 +144,38 @@ def get_quiz_detail(quiz_id: UUID, current_user: UUID, db: Session) -> dict:
 	return _serialize_quiz_detail(quiz)
 
 
+def _maybe_ingest_quiz(db: Session, quiz_id) -> None:
+    """
+    Best-effort ingestion: nếu Qdrant/embedding chưa sẵn sàng thì log warning
+    và bỏ qua, không làm fail luồng CRUD quiz.
+    """
+    try:
+        from app.services.ingestion_service import ingest_quiz
+
+        ingest_quiz(db, quiz_id)
+    except Exception as e:  # noqa: BLE001
+        # Không raise để không phá luồng chính (create/update/delete quiz)
+        # Có thể bật flag fail-fast sau nếu muốn.
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "Ingestion hook failed for quiz %s: %s", quiz_id, e
+        )
+
+
+def _maybe_remove_quiz_from_index(quiz_id) -> None:
+    try:
+        from app.services.ingestion_service import remove_quiz_from_index
+
+        remove_quiz_from_index(str(quiz_id))
+    except Exception as e:  # noqa: BLE001
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "Remove-from-index failed for quiz %s: %s", quiz_id, e
+        )
+
+
 def create_quiz_with_questions(payload: dict, current_user: UUID, db: Session) -> dict:
 	title = payload.get("title")
 	if not title:
@@ -188,6 +220,10 @@ def create_quiz_with_questions(payload: dict, current_user: UUID, db: Session) -
 			raise
 
 	db.refresh(quiz)
+
+	# Hook: ingest vào Qdrant (best-effort)
+	_maybe_ingest_quiz(db, quiz.id)
+
 	return {
 		"id": str(quiz.id),
 		"title": quiz.title,
@@ -247,7 +283,11 @@ def update_quiz_with_questions(quiz_id: UUID, payload: dict, current_user: UUID,
 	else:
 		db.commit()
 
-	db.refresh(quiz)
+		db.refresh(quiz)
+
+	# Hook: re-ingest sau update (best-effort)
+	_maybe_ingest_quiz(db, quiz_id)
+
 	return {
 		"id": str(quiz.id),
 		"title": quiz.title,
@@ -267,13 +307,17 @@ def delete_quiz(quiz_id: UUID, current_user: UUID, db: Session) -> None:
 	if quiz.created_by != current_user:
 		raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to delete this quiz")
 
-	has_game_history = db.query(GameRoom.id).filter(GameRoom.quiz_id == quiz.id).first() is not None
+		has_game_history = db.query(GameRoom.id).filter(GameRoom.quiz_id == quiz.id).first() is not None
 	if has_game_history:
 		quiz.is_deleted = True
 		quiz.is_public = False
 		quiz.deleted_at = datetime.now(timezone.utc)
 		db.commit()
+		# Hook: dọn khỏi index khi soft-delete
+		_maybe_ingest_quiz(db, quiz_id)
 		return
 
 	db.delete(quiz)
 	db.commit()
+	# Hook: dọn khỏi index khi hard-delete
+	_maybe_remove_quiz_from_index(quiz_id)

@@ -11,12 +11,14 @@ from app.models.game.game_questions import GameQuestion
 from app.models.game.player_answers import PlayerAnswer
 from app.models.game.game_results import GameResult
 from app.models.game.chat_messages import ChatMessage
+from app.models.game.kicked_players import KickedPlayer
 from app.models.user_stat.user_stats import UserStats
 from app.models.social.friendships import Friendship
 from app.models.social.friend_requests import FriendRequest
 from app.models.social.conversations import Conversation
 from app.models.social.conversation_members import ConversationMember
 from app.models.social.messages import Message
+from app.models.ai.ai_runs import AIRun
 
 __all__ = [
     "Base",
@@ -32,11 +34,14 @@ __all__ = [
     "PlayerAnswer",
     "GameResult",
     "ChatMessage",
+    "KickedPlayer",
     "UserStats",
     "Friendship",
     "FriendRequest",
     "Conversation",
     "ConversationMember",
     "Message",
+    "AIRun",
 ]
+
 

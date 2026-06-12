@@ -11,6 +11,36 @@ from app.models.social.conversation_members import ConversationMember
 from app.schemas.social import MessageCreate, MessageUpdate, MessageListResponse, MessageDetailResponse
 from app.services.conversation_service import ConversationService
 
+
+def _maybe_ingest_message(db: Session, message_id) -> None:
+    """
+    Best-effort: embed message vào chat_context_embeddings.
+    Lỗi embed/Qdrant chỉ log warning, không phá luồng CRUD chat.
+    """
+    try:
+        from app.services.ingestion_service import ingest_message
+
+        ingest_message(db, message_id)
+    except Exception as e:  # noqa: BLE001
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "Ingestion hook failed for message %s: %s", message_id, e
+        )
+
+
+def _maybe_remove_message_from_index(message_id) -> None:
+    try:
+        from app.services.ingestion_service import remove_message_from_index
+
+        remove_message_from_index(str(message_id))
+    except Exception as e:  # noqa: BLE001
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "Remove-from-index failed for message %s: %s", message_id, e
+        )
+
 class MessageService:
     @staticmethod
     def _serialize_message(message: Message) -> Dict[str, Any]:
@@ -66,6 +96,10 @@ class MessageService:
 
         db.commit()
         db.refresh(message)
+
+        # Hook: embed vào chat_context_embeddings (best-effort)
+        _maybe_ingest_message(db, message.id)
+
         return MessageService._serialize_message(message)
 
     @staticmethod
@@ -127,6 +161,10 @@ class MessageService:
         message.updated_at = datetime.utcnow()
         db.commit()
         db.refresh(message)
+
+        # Hook: re-ingest sau update (best-effort)
+        _maybe_ingest_message(db, message.id)
+
         return MessageService._serialize_message(message)
 
     @staticmethod
@@ -148,6 +186,10 @@ class MessageService:
         message.deleted_at = datetime.utcnow()
         db.commit()
         db.refresh(message)
+
+        # Hook: dọn khỏi index khi soft-delete (best-effort)
+        _maybe_remove_message_from_index(message.id)
+
         return message
 
     @staticmethod

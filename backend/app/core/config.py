@@ -1,6 +1,7 @@
 from pydantic_settings import BaseSettings
 from typing import Optional
 
+
 class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "postgresql://postgres:7906@localhost:5432/quiz"
@@ -46,9 +47,40 @@ class Settings(BaseSettings):
     SMTP_FROM_EMAIL: Optional[str] = None
     SMTP_USE_TLS: bool = True
 
+        # Gemini proxy (OpenAI-compatible)
+    GEMINI_PROXY_BASE_URL: str = "https://api.shopaikey.com/v1"
+    GEMINI_PROXY_API_KEY: Optional[str] = None
+    LLM_MODEL: str = "gemini-2.5-flash"
+    INTENT_ROUTER_MODEL: str = "gemini-2.5-flash"  # Phase 3: dùng chung LLM_MODEL
+    EMBEDDING_MODEL: str = "gemini-embedding-001"
+    EMBEDDING_DIM: int = 3072
+    GEMINI_PROXY_TIMEOUT: int = 30
+    GEMINI_PROXY_MAX_RETRIES: int = 2
+
+    # Qdrant
+    QDRANT_URL: str = "http://localhost:6333"
+    QDRANT_API_KEY: Optional[str] = None
+    QDRANT_VECTOR_SIZE: int = 3072
+    QDRANT_DISTANCE: str = "Cosine"
+
+        # Embedding / retrieval tunables
+    EMBEDDING_BATCH_SIZE: int = 16
+    EMBEDDING_MAX_CHARS: int = 8000
+    RETRIEVAL_DEFAULT_TOP_K: int = 10
+    RETRIEVAL_MAX_TOP_K: int = 50
+    RETRIEVAL_CANDIDATE_MULTIPLIER: int = 3
+
+    # RAG: chat context (tự động lấy top-K tin nhắn trong conversation
+    # trước khi composer sinh câu trả lời)
+    CHAT_RAG_ENABLED: bool = True
+    CHAT_RAG_TOP_K: int = 5
+    CHAT_RAG_MIN_SCORE: float = 0.0  # bỏ qua hit có score < threshold
+
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"  # Allow extra env vars (PGADMIN, NEXT_PUBLIC_*)
 
 
 settings = Settings()
+

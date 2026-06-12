@@ -1,0 +1,86 @@
+# ============================================================
+# Quiz Battle - Docker Compose Environment Variables (Template)
+#
+# Cách dùng:
+#   1. Copy file này thành `.env` ở thư mục GỐC dự án
+#      (ngang hàng với docker-compose.yml).
+#   2. Điền giá trị thật cho GEMINI_PROXY_API_KEY, SECRET_KEY, v.v.
+#   3. KHÔNG commit file .env thật có chứa secret vào git.
+#
+# Tham chiếu: PHASE2_SETUP.md + PHASE3_GEMINI_MIGRATION.md
+# Lưu ý: cấu hình dưới đây PHÙ HỢP với docker-compose.yml hiện tại
+# (mọi service chạy trong compose network: db, redis, qdrant).
+# ============================================================
+
+# ----- App -----
+DEBUG=true
+SECRET_KEY=replace_with_a_strong_secret_key
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+REFRESH_TOKEN_EXPIRE_DAYS=7
+ALGORITHM=HS256
+API_V1_STR=/api/v1
+PROJECT_NAME=Quiz Battle
+ALLOWED_ORIGINS=["http://localhost:3000","http://127.0.0.1:3000"]
+
+# ----- Database (docker-compose service 'db') -----
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=7906
+POSTGRES_DB=quiz
+POSTGRES_HOST=db
+POSTGRES_PORT=5432
+# DATABASE_URL được build tự động trong docker-compose.yml.
+
+# ----- Redis (docker-compose service 'redis') -----
+REDIS_URL=redis://redis:6379/0
+ROOM_SESSION_TTL_SECONDS=86400
+
+# ----- Google OAuth (optional) -----
+GOOGLE_CLIENT_ID=replace_with_your_google_client_id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=replace_with_your_google_client_secret
+# Local:
+GOOGLE_REDIRECT_URI=http://localhost:3000/auth/callback
+# Production:
+# GOOGLE_REDIRECT_URI=https://laixeantoan.id.vn/auth/callback
+
+# ----- Email OTP SMTP (optional) -----
+EMAIL_OTP_EXPIRE_MINUTES=10
+EMAIL_OTP_RESEND_SECONDS=60
+EMAIL_OTP_MAX_ATTEMPTS=5
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=your_email@gmail.com
+SMTP_PASSWORD=your_16_character_app_password
+SMTP_FROM_EMAIL=your_email@gmail.com
+SMTP_USE_TLS=True
+
+# ----- Gemini proxy (OpenAI-compatible) -----
+# BẮT BUỘC cho Phase 2 (embedding) + Phase 3+ (LLM chat).
+# Lấy key từ https://api.shopaikey.com/
+GEMINI_PROXY_BASE_URL=https://api.shopaikey.com/v1
+GEMINI_PROXY_API_KEY=sk-your-key-here
+LLM_MODEL=gemini-2.5-flash
+EMBEDDING_MODEL=gemini-embedding-001
+EMBEDDING_DIM=3072
+GEMINI_PROXY_TIMEOUT=30
+GEMINI_PROXY_MAX_RETRIES=2
+
+# ----- Qdrant (docker-compose service 'qdrant') -----
+QDRANT_URL=http://qdrant:6333
+QDRANT_API_KEY=
+QDRANT_VECTOR_SIZE=3072
+QDRANT_DISTANCE=Cosine
+
+# ----- Embedding / retrieval tunables (optional) -----
+EMBEDDING_BATCH_SIZE=16
+EMBEDDING_MAX_CHARS=8000
+RETRIEVAL_DEFAULT_TOP_K=10
+RETRIEVAL_MAX_TOP_K=50
+RETRIEVAL_CANDIDATE_MULTIPLIER=3
+
+# ----- pgAdmin / RedisInsight (optional) -----
+PGADMIN_DEFAULT_EMAIL=admin@example.com
+PGADMIN_DEFAULT_PASSWORD=admin
+
+# ----- Frontend (optional override) -----
+NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+NEXT_PUBLIC_WS_URL=ws://localhost:8000

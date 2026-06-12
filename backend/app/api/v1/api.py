@@ -8,6 +8,9 @@ from app.api.v1.import_router import router as import_router
 from app.api.v1.endpoints.conversations import router as conversations_router
 from app.api.v1.endpoints.messages import router as messages_router
 from app.api.v1.endpoints.friends import router as friends_router
+from app.api.v1.endpoints.search import router as search_router
+from app.api.v1.endpoints.debug_sql import router as debug_router
+# from app.api.v1.endpoints.admin_ai import router as admin_ai_router  # Tạm comment vì import hang
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth_router)
@@ -19,4 +22,8 @@ api_router.include_router(import_router)
 api_router.include_router(conversations_router)
 api_router.include_router(messages_router)
 api_router.include_router(friends_router)
+api_router.include_router(search_router)
+api_router.include_router(debug_router)
+# api_router.include_router(admin_ai_router, prefix="/admin/ai")  # Tạm comment
+
 

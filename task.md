@@ -1,5 +1,5 @@
-
 #
+
 GIAI ĐOẠN 1: CƠ SỞ DỮ LIỆU & QUẢN LÝ QUIZ (NỀN TẢNG)
 Mục tiêu: Giúp Frontend thoát khỏi dữ liệu ảo khi tạo và hiển thị Quiz.
 
@@ -109,3 +109,58 @@ Alembic: Bạn hãy dùng Alembic ngay từ Task 1 để quản lý version DB, 
 Authentication: Vì dùng native WS, đừng quên truyền token qua URL (ví dụ: ws://.../ws/game/123?token=abc) vì WS không gửi được Custom Header như REST.
 
 Logging: Khi làm Realtime, hãy log kỹ các event type để biết BE đã phát đi mà FE chưa nhận được hay do logic FE xử lý sai.
+
+GIAI ĐOẠN 6: MIGRATE AI SANG GEMINI API QUA PROXY (THAY LOCAL GPU)
+Mục tiêu: Bỏ hoàn toàn Ollama / local embedding model, dùng Gemini API qua proxy bên thứ 3 https://api.shopaikey.com/v1.
+
+Xem chi tiết kỹ thuật ở file PHASE3_GEMINI_MIGRATION.md, tóm tắt kiến trúc ở RAG.md mục 22.
+
+Task 16: Cấu hình biến môi trường cho Gemini proxy
+
+- Thêm GEMINI_PROXY_BASE_URL, GEMINI_PROXY_API_KEY, LLM_MODEL, EMBEDDING_MODEL, EMBEDDING_DIM, QDRANT_VECTOR_SIZE vào backend/.env và .env.example.
+- Cập nhật app/core/config.py với các field mới (giữ backward compatible nếu cần).
+- Bỏ hoặc comment các biến cũ liên quan tới local embedding/Ollama.
+
+Task 17: Rewrite embedding_service dùng Gemini embedding qua proxy
+
+- Bỏ import sentence-transformers.
+- Bỏ hàm get_embedder(), bỏ logic prefix passage:/query:.
+- Triển khai embed_passages() và embed_query() qua httpx, gọi POST {GEMINI_PROXY_BASE_URL}/embeddings.
+- Hỗ trợ batch embedding để giảm số request khi backfill.
+- Giữ nguyên chữ ký hàm để ingestion_service và search_service không phải sửa.
+
+Task 18: Tạo llm_service mới gọi Gemini qua proxy
+
+- Tạo app/services/llm_service.py.
+- Triển khai chat_completion() (sync hoặc async) gọi POST {GEMINI_PROXY_BASE_URL}/chat/completions với model gemini-2.5-flash.
+- Hỗ trợ system prompt + user message + chat history.
+- Trả về answer text + usage (prompt_tokens, completion_tokens).
+- Xử lý timeout, retry, và fallback message khi proxy lỗi.
+
+Task 19: Cập nhật Qdrant collection cho vector size mới
+
+- Đổi QDRANT_VECTOR_SIZE từ 384 sang 768 (theo EMBEDDING_DIM).
+- Drop 4 collection cũ trong Qdrant.
+- Restart backend để ensure_collections() tạo lại với dim mới.
+- Verify payload schema không đổi.
+
+Task 20: Chạy lại backfill_embeddings
+
+- Cập nhật scripts/backfill_embeddings.py nếu cần (signature không đổi nhờ Task 17).
+- Chạy backfill toàn bộ quiz public còn lại trong PostgreSQL.
+- Verify số point trong collection khớp với số quiz/question active.
+- Test retrieval với query tiếng Việt và tiếng Anh.
+
+Task 21: Cập nhật requirements.txt và docker-compose
+
+- Bỏ sentence-transformers khỏi requirements.txt.
+- Giữ qdrant-client (vẫn cần), httpx (đã có).
+- Bỏ (hoặc không thêm) service ai-server/Ollama trong docker-compose.yml.
+- Không mount model cache volume.
+
+Task 22: Cập nhật tài liệu
+
+- Cập nhật PHASE2_SETUP.md phần Migration Note (đã có).
+- Đảm bảo RAG.md mục 22 khớp với implementation thực tế.
+- Cập nhật README nếu có đề cập tới Ollama / local model.
+- Viết Troubleshooting cho Gemini proxy: timeout, rate limit, key invalid, model not found.

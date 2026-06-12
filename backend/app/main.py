@@ -89,6 +89,37 @@ def startup():
 
 
 @app.on_event("startup")
+def startup_qdrant():
+    """
+    Đảm bảo 4 Qdrant collection tồn tại với vector size + payload indexes chuẩn.
+    Nếu Qdrant chưa lên thì log cảnh báo nhưng KHÔNG fail backend, để CRUD quiz
+    vẫn chạy được. Search endpoints sẽ trả 500 nếu Qdrant down.
+    """
+    try:
+        from app.services.qdrant_service import ensure_collections
+        ensure_collections()
+    except Exception as e:  # noqa: BLE001
+        print(f"⚠️ Qdrant bootstrap failed: {e}. Search endpoints sẽ lỗi cho đến khi Qdrant lên.")
+
+
+@app.on_event("startup")
+def startup_gemini_proxy_healthcheck():
+    """
+    Health-check nhẹ tới Gemini proxy (chỉ log warning nếu lỗi).
+    Giúp phát hiện sớm proxy key sai / network chặn.
+    """
+    try:
+        from app.services.embedding_service import _require_api_key
+        _require_api_key()  # chỉ check key có không, không gọi API
+        print("✅ Gemini proxy API key configured.")
+    except RuntimeError as e:
+        print(f"⚠️ Gemini proxy not ready: {e}")
+    except Exception as e:  # noqa: BLE001
+        print(f"⚠️ Gemini proxy health check failed: {e}")
+
+
+
+@app.on_event("startup")
 async def startup_redis_pubsub():
     global redis_pubsub_task
     redis_pubsub_task = asyncio.create_task(listen_ws_events(manager))

@@ -46,6 +46,7 @@ Hiện tại backend đã có các phần nền tảng sau:
 ### 3.1 Ba lớp chính
 
 1. Lớp chat và social
+
 - friend request;
 - friendship;
 - conversation;
@@ -53,11 +54,13 @@ Hiện tại backend đã có các phần nền tảng sau:
 - messages.
 
 2. Lớp retrieval
+
 - embeddings cho quiz và question;
 - tìm top-k bằng vector similarity;
 - lọc theo metadata bằng SQL.
 
 3. Lớp AI orchestration
+
 - nhận input từ chat;
 - phân loại intent;
 - gọi semantic search hoặc text-to-SQL tool;
@@ -290,11 +293,13 @@ Cách xử lý:
 Không nên lấy trực tiếp top-k similarity rồi trả thẳng. Nên dùng pipeline 2 bước:
 
 1. Candidate generation
+
 - lấy khoảng 20 đến 50 point từ Qdrant;
 - filter theo payload trước;
 - giữ lại candidates đủ rộng để tránh bỏ sót.
 
 2. Reranking
+
 - tính điểm cuối dựa trên nhiều tín hiệu;
 - ví dụ: vector similarity, public priority, độ khớp tag, số câu hỏi, độ tươi mới, và độ khớp với intent;
 - lấy top 3 đến 10 kết quả tốt nhất đưa vào prompt.
@@ -551,22 +556,26 @@ Mô hình phù hợp cho cách này là:
 AI server nên có 3 lớp chức năng:
 
 1. Inference layer
+
 - chạy model đã quantize 4-bit;
 - hỗ trợ streaming nếu cần;
 - trả response theo token hoặc theo chunk.
 
 2. Embedding layer
+
 - tạo embedding cho quiz, question, và query của người dùng;
 - ưu tiên chạy trên GPU nếu pipeline embedding hỗ trợ;
 - lưu vector về Qdrant hoặc vector store nội bộ.
 
 3. Prompt orchestration layer
+
 - nhận context từ backend;
 - ghép system prompt, chat history, retrieval results;
 - giới hạn độ dài context;
 - trả prompt đã sẵn sàng cho model.
 
 4. Model routing layer
+
 - chọn model theo tác vụ;
 - ví dụ chat ngắn, QA, summarization;
 - sau này có thể thêm model khác nhưng vẫn giữ chung giao diện API.
@@ -765,11 +774,13 @@ Không nên lấy top-k trả thẳng theo vector similarity vì kết quả có
 Retrieval nên đi theo 2 bước:
 
 1. Candidate generation
+
 - query Qdrant lấy 20 đến 50 candidates;
 - filter payload trước;
 - giữ tập ứng viên đủ rộng.
 
 2. Reranking
+
 - tính điểm cuối theo nhiều tín hiệu;
 - chọn top 3 đến 10 item tốt nhất;
 - đưa vào prompt hoặc trả về UI.
@@ -956,6 +967,7 @@ Build phần social chat trước, gồm:
 - No AI integration yet (mock response hoặc skip AI).
 
 Điều này cho phép:
+
 - User có thể chat với nhau ngay;
 - Backend architecture đã sẵn sàng cho AI sau;
 - Kiểm soát scope rõ ràng, dễ test.
@@ -983,3 +995,123 @@ Backend chỉ gọi Ollama khi user bật AI, không phụ thuộc vào nó.
 - **Phase 2 (After Phase 1 stable):** Add Qdrant + embedding pipeline;
 - **Phase 3 (Later):** Spin up Ollama microservice, integrate AI endpoints;
 - **Phase 4 (Final):** GPU optimization, reranking, monitoring.
+
+## 22. Issue mới: Chuyển từ Ollama / local GPU sang Gemini API qua proxy bên thứ 3
+
+> **Trạng thái:** Đề xuất (chưa implement). Xem chi tiết triển khai ở file `PHASE3_GEMINI_MIGRATION.md`.
+
+### 22.1 Bối cảnh
+
+Thiết kế AI server hiện tại (mục 15 và 21) dựa trên:
+
+- Ollama chạy local (Docker container riêng) với model GGUF 2B-3B 4-bit;
+- embedding model local như `multilingual-e5-small` hoặc `nomic-embed-text`;
+- toàn bộ inference và embedding chạy trên GPU local của dev (WSL/CUDA).
+
+Hướng này gặp một số vấn đề thực tế:
+
+- máy dev không phải lúc nào cũng có GPU rảnh, hoặc GPU VRAM không đủ cho cả LLM 3B + embedding;
+- Ollama local chậm hơn nhiều so với API hosted (ví dụ Gemini 2.5 Flash) về tốc độ phản hồi;
+- khi làm việc trên nhiều máy (laptop cơ quan, laptop cá nhân, server test), mỗi nơi phải setup lại Ollama, model cache, GPU driver;
+- debug latency, tải model, OOM tốn thời gian hơn là tập trung vào logic RAG;
+- muốn thử nhanh nhiều model lớn hơn (Gemini 2.5 Flash, Pro) mà local không kham nổi.
+
+Vì vậy cần một hướng mới: dùng **Gemini API thông qua proxy bên thứ 3** thay vì tự host Ollama.
+
+### 22.2 Mục tiêu mới
+
+- LLM chat: dùng `gemini-2.5-flash` qua proxy `https://api.shopaikey.com/v1`.
+- Embedding: dùng `gemini-embedding-001` qua cùng proxy đó.
+- Bỏ hoàn toàn Ollama container, bỏ model GGUF local, bỏ phần GPU/VRAM tuning.
+- Bỏ luôn local embedding model (sentence-transformers / fastembed) trong backend.
+- Code AI orchestration nằm gọn trong backend FastAPI, gọi HTTP ra ngoài, không cần microservice riêng.
+
+### 22.3 Tác động lên kiến trúc đã vạch ra
+
+Mục 15 và 21 mô tả AI server riêng chạy Ollama + llama.cpp. Với hướng Gemini proxy:
+
+- Không cần `ai-server` container trong `docker-compose.yml`.
+- Không cần Dockerfile cho AI server.
+- Không cần biến `MODEL_PATH`, `GPU_LAYERS`, `CONTEXT_SIZE`, `THREADS`, `BATCH_SIZE`.
+- Không cần mount volume chứa GGUF model.
+- Không cần healthcheck cho AI server.
+
+Thay vào đó backend chỉ cần:
+
+- một HTTP client (`httpx`) gọi tới `https://api.shopaikey.com/v1/chat/completions` cho LLM;
+- một HTTP client gọi tới `https://api.shopaikey.com/v1/embeddings` cho embedding;
+- biến môi trường `GEMINI_PROXY_BASE_URL` và `GEMINI_PROXY_API_KEY`;
+- biến `LLM_MODEL` (mặc định `gemini-2.5-flash`) và `EMBEDDING_MODEL` (mặc định `gemini-embedding-001`).
+
+### 22.4 Tác động lên Qdrant và retrieval
+
+Vector size thay đổi khi đổi embedding model:
+
+- `multilingual-e5-small` (local, cũ): 384 dim.
+- `gemini-embedding-001` (mới, qua proxy): 3072 dim.
+
+Hệ quả:
+
+- Phải cập nhật `QDRANT_VECTOR_SIZE` trong config khớp với dim của `gemini-embedding-001`.
+- Phải drop 4 collection cũ (vector size 384) và tạo lại với vector size mới.
+- Phải chạy lại `backfill_embeddings.py` để re-index toàn bộ quiz/question bằng embedding mới.
+- Bỏ luôn logic E5 prefix (`passage: ` / `query: `) vì Gemini embedding không cần prefix đó.
+
+Các task liên quan sẽ được mô tả chi tiết trong `PHASE3_GEMINI_MIGRATION.md`.
+
+### 22.5 Tác động lên RAG prompt
+
+- Vẫn giữ cấu trúc RAG: retrieve top-k từ Qdrant → ghép context → gọi LLM → lưu message AI.
+- Có thể tăng `top_k` lên một chút (ví dụ 8-12) vì LLM giờ mạnh hơn, context window lớn hơn.
+- System prompt có thể bổ sung rằng model là `gemini-2.5-flash` để audit trong `ai_runs`.
+- Theo dõi `usage.prompt_tokens` và `usage.completion_tokens` từ response của proxy.
+
+### 22.6 Tác động lên `ai_runs`
+
+Bảng `ai_runs` (mục 4.3) nên lưu thêm:
+
+- `model_name`: cố định là `gemini-2.5-flash` (hoặc override qua env);
+- `embedding_model`: `gemini-embedding-001`;
+- `embedding_dim`: 3072 (hoặc giá trị cấu hình);
+- `provider`: `gemini-proxy`;
+- `proxy_base_url`: log lại base URL (che bớt phần secret nếu cần).
+
+### 22.7 Lợi ích
+
+- Không phụ thuộc GPU local, có thể dev trên máy yếu hoặc trên cloud editor.
+- Tốc độ phản hồi chat nhanh hơn đáng kể so với model 2-3B local.
+- Dễ đổi model (đổi env var), không cần rebuild image.
+- Không phải quản lý Ollama cache, model versioning, GPU driver.
+- Chi phí dev/test thấp nếu proxy free tier hoặc rẻ.
+
+### 22.7 Rủi ro và biện pháp giảm thiểu
+
+- **Phụ thuộc mạng:** backend cần internet ra ngoài proxy. Có retry + timeout hợp lý, có fallback message thân thiện khi không gọi được.
+- **Rate limit / quota:** proxy có thể giới hạn request/giây hoặc quota ngày. Cần log `usage`, cảnh báo khi gần quota.
+- **Bảo mật API key:** key lưu trong `.env` (không commit), trong production dùng secret manager.
+- **Vendor lock-in:** dùng OpenAI-compatible schema của proxy (`/chat/completions`, `/embeddings`) để sau này đổi provider chỉ tốn đổi base URL + model name, không phải sửa logic service.
+- **Data privacy:** dữ liệu quiz và câu hỏi user gửi sang proxy bên thứ 3. Nên tránh gửi PII (email, username) trong prompt nếu không cần.
+
+### 22.8 Phạm vi thay đổi
+
+Các file chính sẽ bị ảnh hưởng (chưa sửa, liệt kê để theo dõi):
+
+- `backend/app/core/config.py` — thêm `LLM_*`, `EMBEDDING_*`, `GEMINI_PROXY_*`.
+- `backend/app/services/embedding_service.py` — thay sentence-transformers bằng HTTP call.
+- `backend/app/services/llm_service.py` — **mới**, gọi proxy `/chat/completions`.
+- `backend/app/services/ingestion_service.py` — chỉnh phần text builder (bỏ prefix E5).
+- `backend/app/services/qdrant_service.py` — chỉnh vector size.
+- `backend/scripts/backfill_embeddings.py` — chạy lại với embedding mới.
+- `backend/app/main.py` — bỏ warmup model local, thêm health check proxy.
+- `backend/requirements.txt` — bỏ `sentence-transformers`, `qdrant-client[fastembed]` vẫn giữ, thêm `httpx` (đã có).
+- `docker-compose.yml` — bỏ `ai-server` service nếu có.
+- Tài liệu: `RAG.md` (mục này), `PHASE2_SETUP.md` (cập nhật), `PHASE3_GEMINI_MIGRATION.md` (mới, chi tiết).
+- `.env.example` — thêm các biến Gemini proxy.
+
+### 22.9 Không thay đổi
+
+- Kiến trúc tổng thể của RAG (retrieve → rerank → prompt → LLM).
+- Schema `conversations`, `messages`, `ai_runs` (chỉ thêm cột phụ cho audit).
+- WebSocket realtime cho chat game và chat social.
+- Phần auth, policy, RBAC của backend.
+- Cấu trúc payload Qdrant (`source_type`, `source_id`, `is_public`, `is_deleted`, ...).

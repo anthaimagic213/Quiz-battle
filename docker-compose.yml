@@ -1,3 +1,12 @@
+# Quiz Battle - Docker Compose
+#
+# Cách dùng:
+#   1. Copy env-docker-template.txt thành .env ở thư mục gốc.
+#   2. Sửa .env, điền GEMINI_PROXY_API_KEY và SECRET_KEY.
+#   3. Chạy: docker compose up -d --build
+#
+# Tham chiếu: DOCKER_RUN.md, PHASE2_SETUP.md, PHASE3_GEMINI_MIGRATION.md
+
 services:
   db:
     image: postgres:15-alpine
@@ -5,14 +14,14 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-quizbattle123}
-      POSTGRES_DB: ${POSTGRES_DB:-quiz_battle}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-7906}
+      POSTGRES_DB: ${POSTGRES_DB:-quiz}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-quiz_battle}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-quiz}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -29,6 +38,23 @@ services:
       timeout: 5s
       retries: 5
 
+  qdrant:
+    image: qdrant/qdrant:v1.9.0
+    container_name: quiz_battle_qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      # Qdrant image không có curl/wget, dùng TCP port check (bash /dev/tcp).
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/6333 && echo -e 'GET / HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q 'qdrant' <&3"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
   backend:
     build:
       context: ./backend
@@ -42,14 +68,17 @@ services:
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-quizbattle123}@db:5432/${POSTGRES_DB:-quiz_battle}
+      # Database — chạy trong compose network, dùng service 'db' làm host
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-7906}@db:5432/${POSTGRES_DB:-quiz}}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-quizbattle123}
-      POSTGRES_DB: ${POSTGRES_DB:-quiz_battle}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-7906}
+      POSTGRES_DB: ${POSTGRES_DB:-quiz}
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
+      # Redis — dùng service 'redis' làm host
       REDIS_URL: redis://redis:6379/0
       ROOM_SESSION_TTL_SECONDS: ${ROOM_SESSION_TTL_SECONDS:-86400}
+      # App
       DEBUG: ${BACKEND_DEBUG:-true}
       SECRET_KEY: ${SECRET_KEY:-change-this-secret-in-production}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
@@ -58,11 +87,48 @@ services:
       API_V1_STR: /api/v1
       PROJECT_NAME: Quiz Battle
       ALLOWED_ORIGINS: '["http://localhost:3000","http://127.0.0.1:3000"]'
+      # Gemini proxy (OpenAI-compatible) — bắt buộc cho Phase 2+
+      GEMINI_PROXY_BASE_URL: ${GEMINI_PROXY_BASE_URL:-https://api.shopaikey.com/v1}
+      GEMINI_PROXY_API_KEY: ${GEMINI_PROXY_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-gemini-2.5-flash}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-gemini-embedding-001}
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-3072}
+      GEMINI_PROXY_TIMEOUT: ${GEMINI_PROXY_TIMEOUT:-30}
+      GEMINI_PROXY_MAX_RETRIES: ${GEMINI_PROXY_MAX_RETRIES:-2}
+      # Qdrant — dùng service 'qdrant' làm host
+      QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-}
+      QDRANT_VECTOR_SIZE: ${QDRANT_VECTOR_SIZE:-3072}
+      QDRANT_DISTANCE: ${QDRANT_DISTANCE:-Cosine}
+      # Embedding / retrieval tunables
+      EMBEDDING_BATCH_SIZE: ${EMBEDDING_BATCH_SIZE:-16}
+      EMBEDDING_MAX_CHARS: ${EMBEDDING_MAX_CHARS:-8000}
+      RETRIEVAL_DEFAULT_TOP_K: ${RETRIEVAL_DEFAULT_TOP_K:-10}
+      RETRIEVAL_MAX_TOP_K: ${RETRIEVAL_MAX_TOP_K:-50}
+      RETRIEVAL_CANDIDATE_MULTIPLIER: ${RETRIEVAL_CANDIDATE_MULTIPLIER:-3}
+      # Google OAuth (optional)
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:3000/auth/callback}
+      # Email OTP (optional)
+      EMAIL_OTP_EXPIRE_MINUTES: ${EMAIL_OTP_EXPIRE_MINUTES:-10}
+      EMAIL_OTP_RESEND_SECONDS: ${EMAIL_OTP_RESEND_SECONDS:-60}
+      EMAIL_OTP_MAX_ATTEMPTS: ${EMAIL_OTP_MAX_ATTEMPTS:-5}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-True}
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
+      # Qdrant: chỉ chờ start, không chờ healthy.
+      # Backend tự retry kết nối khi Qdrant chưa sẵn sàng.
+      qdrant:
+        condition: service_started
     command: python -B -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()\""]
@@ -127,3 +193,4 @@ services:
 volumes:
   postgres_data:
   redisinsight_data:
+  qdrant_data:

@@ -23,7 +23,7 @@ Kết quả debug hiện tại:
 
 ```
 === [1/5] Test config ===
-[OK] LLM_MODEL = gemini-2.5-flash
+[OK] LLM_MODEL = gemini-2.5-pro
 [OK] GEMINI_PROXY_BASE_URL = https://api.shopaikey.com/v1
 [OK] API key set: sk-7juhbHw...
 

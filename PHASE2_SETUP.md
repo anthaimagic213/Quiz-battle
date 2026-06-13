@@ -109,7 +109,7 @@ Các biến liên quan (xem `env-docker-template.txt` để biết thêm):
 ```ini
 GEMINI_PROXY_BASE_URL=https://api.shopaikey.com/v1
 GEMINI_PROXY_API_KEY=sk-...
-LLM_MODEL=gemini-2.5-flash
+LLM_MODEL=gemini-2.5-pro
 EMBEDDING_MODEL=gemini-embedding-001
 EMBEDDING_DIM=3072
 QDRANT_VECTOR_SIZE=3072
@@ -207,7 +207,7 @@ for col in data.get('result',{}).get('collections',[]):
 1. Build intent router (semantic vs structured vs smalltalk).
 2. Viết schema cho DB tables dùng cho LLM (whitelist table + column, kèm mô tả ngắn).
 3. Xây safe text-to-SQL tool chỉ chấp nhận query do router emit (không cho LLM sinh SQL tự do).
-4. Kết nối LLM (`gemini-2.5-flash` qua proxy) để compose answer.
+4. Kết nối LLM (`gemini-2.5-pro` qua proxy) để compose answer.
 5. Thêm bảng `ai_runs` để audit retrieval + prompt + token usage.
 6. Reuse `chat_context_embeddings` để recall past message theo nghĩa (không phải theo thời gian).
 

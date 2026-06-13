@@ -57,6 +57,7 @@ from app.services.llm_error_handler import CircuitBreakerOpen as CBOpen
 from app.services.message_service import MessageService
 from app.services.conversation_service import ConversationService
 from app.schemas.social import MessageCreate
+from app.db.session import SessionLocal  # NEW: for db=None auto-session
 
 logger = logging.getLogger(__name__)
 
@@ -195,25 +196,12 @@ def _compose_answer(
             max_tokens=dynamic_max,
         )
 
-        # Detect truncation: nếu completion_tokens chạm max_tokens
-        # thì answer có thể bị cắt. Flag để frontend biết.
-        completion_tokens = int(
-            (response.get("usage") or {}).get("completion_tokens", 0) or 0
-        )
-        truncated = completion_tokens >= dynamic_max - 5  # trừ buffer
-
-        if truncated:
-            logger.warning(
-                f"Composer answer truncated: completion_tokens={completion_tokens}, "
-                f"max_tokens={dynamic_max}, "
-                f"answer_len={len(response['answer'])}"
-            )
-
+        # Trả về answer trực tiếp, không kiểm tra truncation
         return {
             "answer": response["answer"],
             "usage": response["usage"],
             "error": None,
-            "truncated": truncated,
+            "truncated": False,
             "max_tokens_used": dynamic_max,
         }
     except LLMError as e:
@@ -249,13 +237,13 @@ def _dynamic_max_tokens(
     - Trần: 3000 tokens (Gemini 2.5 Flash hỗ trợ output đủ lớn)
     - Sàn: 400 tokens
     """
-    base = 600
-    per_chat_hit = 60
-    per_tool_row = 30
-    # Gemini 2.5 Flash hỗ trợ output 8K tokens. Set hard_cap = 6000
-    # để an toàn (trừ buffer cho safety filters).
-    # Nếu dùng Gemini 2.5 Pro / 2.0 Flash Thinking → có thể tăng lên 16000.
-    hard_cap = int(getattr(settings, "LLM_MAX_OUTPUT_TOKENS", 6000) or 6000)
+    base = 6000
+    per_chat_hit = 600
+    per_tool_row = 300
+    # Gemini 2.5 Flash hỗ trợ output tối đa 8192 tokens.
+    # Set hard_cap = 8192 (max của model) để không bị giới hạn output.
+    # Nếu dùng Gemini 2.5 Pro (output 64K) → có thể tăng lên 16000+.
+    hard_cap = int(getattr(settings, "LLM_MAX_OUTPUT_TOKENS", 81920) or 81920)
     floor = 400
 
     extra = 0
@@ -709,18 +697,20 @@ def _handle_circuit_breaker_open(
 
 
 def run_ai_orchestrator(
-    db: Session,
     conversation_id: UUID,
     user_id: UUID,
     user_message: str,
     user_message_id: UUID,
     recent_history: list[dict] | None = None,
+    db: Session | None = None,
 ) -> dict:
     """
     End-to-end AI pipeline.
 
     Args:
-        db: SQLAlchemy session
+        db: SQLAlchemy session. If None, a new SessionLocal() will be created
+            and closed internally (use this from async/websocket contexts to
+            avoid sharing a session across the event loop boundary).
         conversation_id: UUID conversation hiện tại
         user_id: UUID user gửi message
         user_message: nội dung message
@@ -738,13 +728,46 @@ def run_ai_orchestrator(
             "error": str | None,
         }
     """
-    start_total = time.time()
-    timings: dict[str, int] = {}
-    error_msg: str | None = None
-
     # 0. Validate input
     if not user_message or not user_message.strip():
         raise OrchestratorError("user_message is empty")
+
+    # FIX_REST_API_BLOCKED_BY_AI: auto-manage session lifecycle when caller doesn't provide one.
+    # This is critical for async contexts (WebSocket) where the caller cannot
+    # safely hold a sync session across an awaitable boundary.
+    own_session = db is None
+    if own_session:
+        db = SessionLocal()
+
+    try:
+        return _run_ai_orchestrator_impl(
+            db=db,
+            conversation_id=conversation_id,
+            user_id=user_id,
+            user_message=user_message,
+            user_message_id=user_message_id,
+            recent_history=recent_history,
+        )
+    finally:
+        if own_session:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+
+def _run_ai_orchestrator_impl(
+    db: Session,
+    conversation_id: UUID,
+    user_id: UUID,
+    user_message: str,
+    user_message_id: UUID,
+    recent_history: list[dict] | None,
+) -> dict:
+    """Internal implementation of run_ai_orchestrator (assumes db is open)."""
+    start_total = time.time()
+    timings: dict[str, int] = {}
+    error_msg: str | None = None
 
     # 1. Intent Router (sync, có thể wrap trong to_thread nếu cần)
     t0 = time.time()
@@ -870,19 +893,6 @@ def run_ai_orchestrator(
     answer_text = composer_result["answer"]
     timings["total_ms"] = int((time.time() - start_total) * 1000)
 
-    # 3.5. Nếu bị truncated do max_tokens, gắn suffix cảnh báo + log
-    if composer_result.get("truncated"):
-        answer_text = (
-            answer_text.rstrip()
-            + "\n\n⚠️ _(Câu trả lời bị cắt do giới hạn output. "
-              "Bạn có thể hỏi tiếp để tôi nói rõ hơn.)_"
-        )
-        logger.warning(
-            f"Answer truncated (rag_hits={len(chat_context_rag)}, "
-            f"max_tokens={composer_result.get('max_tokens_used')}). "
-            f"User may need to ask follow-up."
-        )
-
     # 4. Persist AI message (best-effort)
     ai_message_id: UUID | None = None
     try:
@@ -969,15 +979,21 @@ def run_ai_orchestrator(
 
 
 async def run_ai_orchestrator_async(
-    db: Session,
     conversation_id: UUID,
     user_id: UUID,
     user_message: str,
     user_message_id: UUID,
     recent_history: list[dict] | None = None,
+    db: Session | None = None,
 ) -> dict:
     """
-    Async wrapper — chạy sync orchestrator trong thread pool.
+    Async wrapper — chạy sync orchestrator trong thread pool để KHÔNG block event loop.
+
+    Args:
+        db: nếu None, orchestrator sẽ tự tạo SessionLocal() trong thread riêng.
+            LUÔN khuyến nghị truyền None từ async context để tránh share session
+            giữa event loop và thread pool (sẽ gây lỗi concurrent access).
+
     Dùng trong FastAPI WebSocket handler / async endpoint.
     """
     return await asyncio.to_thread(

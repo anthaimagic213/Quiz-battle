@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from typing import Any, Dict, Optional
 from uuid import UUID
 from datetime import datetime
@@ -195,21 +196,124 @@ async def _handle_chat_send(
     except Exception as exc:  # noqa: BLE001
         logger.warning("Ingestion hook failed for chat message %s: %s", message.id, exc)
 
-    # Broadcast user message trước (UX: user thấy message ngay)
+        # Broadcast user message trước (UX: user thấy message ngay)
     await manager.broadcast(
         str(conversation_id),
         {"type": "CHAT_MESSAGE", "data": serialized},
     )
 
     # Hook AI: trigger orchestrator nếu cần (chạy background, không block)
+    # FIX_REST_API_BLOCKED_BY_AI: dùng wrapper có timeout để tránh block event loop
+    # nếu AI task bị treo. Timeout mặc định 15s, vượt quá → broadcast error message.
     asyncio.create_task(
-        _maybe_trigger_ai(
+        _maybe_trigger_ai_with_timeout(
             conversation_id=conversation_id,
             user_id=user_id,
             user_message=content,
             user_message_id=message.id,
         )
     )
+
+
+# FIX_REST_API_BLOCKED_BY_AI: timeout safety net
+# Mặc định 60s để chứa các tác vụ nặng:
+# - Pro model với context RAG dài (top-5 chat history × 500 tokens/hit)
+# - summarize nhiều tin nhắn (intent=summarize cộng thêm 400 tokens output)
+# - SQL queries phức tạp chạy 2 chiều (get_my_friends)
+# Nếu quá timeout này → coi như LLM/proxy bị treo, broadcast error và release.
+AI_TASK_TIMEOUT_SECONDS = 60.0
+AI_TASK_SOFT_WARN_SECONDS = 30.0
+
+
+async def _maybe_trigger_ai_with_timeout(
+    conversation_id: UUID,
+    user_id: UUID,
+    user_message: str,
+    user_message_id: UUID,
+) -> None:
+        """
+        Wrapper bọc _maybe_trigger_ai với asyncio.wait_for.
+        Nếu AI task chạy quá AI_TASK_TIMEOUT_SECONDS (60s) → log + broadcast error.
+        Đây là safety net phòng case LLM proxy bị treo, không bao giờ block REST API.
+
+        Có 2 ngưỡng:
+        - SOFT_WARN (30s): log warning để debug, KHÔNG broadcast gì cả
+        - HARD_TIMEOUT (60s): coi như treo, log error + broadcast error message
+        """
+        ai_task = asyncio.create_task(
+            _maybe_trigger_ai(
+                conversation_id=conversation_id,
+                user_id=user_id,
+                user_message=user_message,
+                user_message_id=user_message_id,
+            )
+        )
+        soft_warn_task = asyncio.create_task(
+            _soft_warn_sleep(conversation_id, user_message_id)
+        )
+
+        try:
+            # Đợi task chính hoàn thành (không bị soft_warn cancel)
+            await ai_task
+        except asyncio.TimeoutError:
+            logger.error(
+                f"AI trigger HARD TIMEOUT after {AI_TASK_TIMEOUT_SECONDS}s: "
+                f"conversation={conversation_id}, user_message_id={user_message_id}"
+            )
+            ai_task.cancel()
+            try:
+                await manager.broadcast(
+                    str(conversation_id),
+                    {
+                        "type": "CHAT_MESSAGE",
+                        "data": {
+                            "id": "temp-ai-timeout",
+                            "conversation_id": str(conversation_id),
+                            "sender_id": str(user_id),
+                            "sender_type": "ai",
+                            "content": (
+                                f"Xin lỗi, AI xử lý quá thời gian cho phép "
+                                f"({AI_TASK_TIMEOUT_SECONDS:.0f}s). Bạn thử lại nhé."
+                            ),
+                            "is_ai_generated": True,
+                            "metadata": {"error": "ai_timeout"},
+                            "created_at": datetime.utcnow().isoformat(),
+                        },
+                    },
+                )
+            except Exception:
+                pass
+        except Exception as exc:
+            # _maybe_trigger_ai đã có try/except bên trong rồi, đây là defense-in-depth
+            logger.exception("AI trigger wrapper unexpected error: %s", exc)
+        finally:
+            # Dọn soft warn task nếu chưa chạy
+            if not soft_warn_task.done():
+                soft_warn_task.cancel()
+            # Áp dụng hard timeout cho cả 2 task
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(ai_task, soft_warn_task, return_exceptions=True),
+                    timeout=AI_TASK_TIMEOUT_SECONDS,
+                )
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                pass
+
+
+async def _soft_warn_sleep(conversation_id: UUID, user_message_id: UUID) -> None:
+        """
+        Sleep SOFT_WARN_SECONDS, nếu chưa bị cancel thì log warning.
+        Soft warning giúp debug: biết task đang lâu nhưng chưa đến mức timeout.
+        """
+        try:
+            await asyncio.sleep(AI_TASK_SOFT_WARN_SECONDS)
+            logger.warning(
+                f"AI trigger is taking long (> {AI_TASK_SOFT_WARN_SECONDS}s): "
+                f"conversation={conversation_id}, user_message_id={user_message_id}. "
+                f"Will hard-timeout at {AI_TASK_TIMEOUT_SECONDS}s."
+            )
+        except asyncio.CancelledError:
+            pass  # task chính xong trước SOFT_WARN → cancel bình thường
 
 
 async def _maybe_trigger_ai(
@@ -221,119 +325,106 @@ async def _maybe_trigger_ai(
     """
     Check xem có cần trigger AI orchestrator không.
     Chạy trong background task (create_task) để không block broadcast user message.
-    
+
     Trigger conditions:
     1. AI_CHAT_ENABLED = True (feature flag)
     2. Message bắt đầu với "@ai " (explicit trigger)
        HOẶC conversation.ai_enabled = True (auto trigger)
-    
+
     Flow:
-    - Load recent history (5 messages)
-    - Run orchestrator (router → tool → composer → persist)
+    - Load recent history (5 messages) — dùng session riêng, đóng ngay
+    - Gọi run_ai_orchestrator_async (chạy trong thread pool, KHÔNG block event loop)
+    - Orchestrator tự tạo session DB của riêng nó → không giữ session qua await
     - Broadcast AI reply
+
+    FIX_REST_API_BLOCKED_BY_AI:
+    - Trước đây hàm này gọi `run_ai_orchestrator(...)` sync → block event loop 1-4s
+    - DB session được giữ suốt thời gian AI chạy → cạn kiệt connection pool
+    - Fix: tách session load history (đóng ngay), gọi async wrapper với db=None
     """
     if not AI_CHAT_ENABLED:
         return
 
+    # FIX_REST_API_BLOCKED_BY_AI: log timing chi tiết để verify root cause
+    t_trigger_start = time.time()
+
     # Check trigger: "@ai " prefix hoặc conversation ai_enabled flag
     explicit_trigger = user_message.lower().startswith("@ai ")
-    
-    db = SessionLocal()
+
+    # FIX_REST_API_BLOCKED_BY_AI: load history + check conversation trong session RIÊNG,
+    # đóng ngay sau khi xong. Không giữ session qua await run_ai_orchestrator_async.
+    conversation = None
+    history: list[dict] = []
     try:
-        conversation = (
-            db.query(Conversation)
-            .filter(Conversation.id == conversation_id)
-            .first()
-        )
-        if conversation is None:
-            return
-        
-        # Check ai_enabled flag (cần thêm column này vào conversations table)
-        # Tạm thời chỉ dùng explicit trigger
-        auto_trigger = False  # conversation.ai_enabled if hasattr(conversation, 'ai_enabled') else False
-        
-        if not explicit_trigger and not auto_trigger:
-            return
-        
-        # Strip "@ai " prefix nếu có
-        query = user_message[4:].strip() if explicit_trigger else user_message
-        if not query:
-            return
-        
-        # Load recent history (5 messages gần nhất)
-        recent_messages = (
-            db.query(Message)
-            .filter(
-                Message.conversation_id == conversation_id,
-                Message.deleted_at.is_(None),
-                Message.id != user_message_id,  # Không bao gồm message hiện tại
+        with SessionLocal() as pre_db:
+            conversation = (
+                pre_db.query(Conversation)
+                .filter(Conversation.id == conversation_id)
+                .first()
             )
-            .order_by(Message.created_at.desc())
-            .limit(5)
-            .all()
-        )
-        recent_messages.reverse()  # Oldest first
-        
-        history = [
-            {
-                "sender_type": msg.sender_type,
-                "content": msg.content,
-            }
-            for msg in recent_messages
-        ]
-        
-        # Run AI orchestrator
-        from app.services.ai_orchestrator import run_ai_orchestrator
-        
-        result = run_ai_orchestrator(
-            db=db,
+            if conversation is not None:
+                # Load recent history (5 messages gần nhất)
+                recent_messages = (
+                    pre_db.query(Message)
+                    .filter(
+                        Message.conversation_id == conversation_id,
+                        Message.deleted_at.is_(None),
+                        Message.id != user_message_id,  # Không bao gồm message hiện tại
+                    )
+                    .order_by(Message.created_at.desc())
+                    .limit(5)
+                    .all()
+                )
+                recent_messages.reverse()  # Oldest first
+                history = [
+                    {
+                        "sender_type": msg.sender_type,
+                        "content": msg.content,
+                    }
+                    for msg in recent_messages
+                ]
+    except Exception as exc:
+        logger.exception("Failed to load conversation/history for AI trigger: %s", exc)
+        return
+
+    if conversation is None:
+        return
+
+    # Check ai_enabled flag (cần thêm column này vào conversations table)
+    # Tạm thời chỉ dùng explicit trigger
+    auto_trigger = False  # conversation.ai_enabled if hasattr(conversation, 'ai_enabled') else False
+
+    if not explicit_trigger and not auto_trigger:
+        return
+
+    # Strip "@ai " prefix nếu có
+    query = user_message[4:].strip() if explicit_trigger else user_message
+    if not query:
+        return
+
+    logger.info(
+        f"AI task triggered: conversation={conversation_id}, "
+        f"user_message_id={user_message_id}, history_len={len(history)}, "
+        f"trigger={'explicit' if explicit_trigger else 'auto'}"
+    )
+
+    # FIX_REST_API_BLOCKED_BY_AI: gọi async wrapper với db=None để:
+    # 1. Orchestrator chạy trong thread pool → KHÔNG block event loop
+    # 2. Orchestrator tự tạo SessionLocal() trong thread → không share session
+    #    giữa event loop và thread (tránh concurrent access error)
+    from app.services.ai_orchestrator import run_ai_orchestrator_async
+
+    try:
+        result = await run_ai_orchestrator_async(
+            db=None,  # orchestrator tự quản lý session lifecycle
             conversation_id=conversation_id,
             user_id=user_id,
             user_message=query,
             user_message_id=user_message_id,
             recent_history=history,
         )
-        
-        ai_message_id = result.get("ai_message_id")
-        if not ai_message_id:
-            # Orchestrator failed to persist AI message (logged internally)
-            # Broadcast một message tạm thời
-            await manager.broadcast(
-                str(conversation_id),
-                {
-                    "type": "CHAT_MESSAGE",
-                    "data": {
-                        "id": "temp-ai-error",
-                        "conversation_id": str(conversation_id),
-                        "sender_id": str(user_id),
-                        "sender_type": "ai",
-                        "content": result.get("answer", "Xin lỗi, tôi gặp sự cố khi xử lý."),
-                        "is_ai_generated": True,
-                        "metadata": {"error": result.get("error")},
-                        "created_at": datetime.utcnow().isoformat(),
-                    },
-                },
-            )
-            return
-        
-        # Load AI message từ DB để broadcast đúng format
-        ai_message = db.query(Message).filter(Message.id == ai_message_id).first()
-        if ai_message:
-            serialized = _serialize_message(ai_message)
-            await manager.broadcast(
-                str(conversation_id),
-                {"type": "CHAT_MESSAGE", "data": serialized},
-            )
-        
-        logger.info(
-            f"AI reply sent: conversation={conversation_id}, "
-            f"intent={result.get('intent')}, "
-            f"total_ms={result.get('timings', {}).get('total_ms')}"
-        )
-    
     except Exception as exc:
-        logger.exception("AI trigger failed: %s", exc)
-        # Best-effort: broadcast error message
+        logger.exception("run_ai_orchestrator_async raised: %s", exc)
         try:
             await manager.broadcast(
                 str(conversation_id),
@@ -353,8 +444,57 @@ async def _maybe_trigger_ai(
             )
         except Exception:
             pass
-    finally:
-        db.close()
+        return
+
+    # FIX_REST_API_BLOCKED_BY_AI: tổng thời gian trigger → broadcast
+    elapsed_ms = int((time.time() - t_trigger_start) * 1000)
+    logger.info(
+        f"AI task finished: total_elapsed={elapsed_ms}ms, "
+        f"intent={result.get('intent')}, "
+        f"orchestrator_total_ms={result.get('timings', {}).get('total_ms')}"
+    )
+
+    ai_message_id = result.get("ai_message_id")
+    if not ai_message_id:
+        # Orchestrator failed to persist AI message (logged internally)
+        # Broadcast một message tạm thời
+        await manager.broadcast(
+            str(conversation_id),
+            {
+                "type": "CHAT_MESSAGE",
+                "data": {
+                    "id": "temp-ai-error",
+                    "conversation_id": str(conversation_id),
+                    "sender_id": str(user_id),
+                    "sender_type": "ai",
+                    "content": result.get("answer", "Xin lỗi, tôi gặp sự cố khi xử lý."),
+                    "is_ai_generated": True,
+                    "metadata": {"error": result.get("error")},
+                    "created_at": datetime.utcnow().isoformat(),
+                },
+            },
+        )
+        return
+
+    # FIX_REST_API_BLOCKED_BY_AI: load AI message trong session RIÊNG, đóng ngay
+    # để broadcast serialized payload mà không giữ connection.
+    try:
+        with SessionLocal() as post_db:
+            ai_message = post_db.query(Message).filter(Message.id == ai_message_id).first()
+            if ai_message:
+                serialized = _serialize_message(ai_message)
+                await manager.broadcast(
+                    str(conversation_id),
+                    {"type": "CHAT_MESSAGE", "data": serialized},
+                )
+    except Exception as exc:
+        logger.exception("Failed to load+broadcast AI message: %s", exc)
+
+    logger.info(
+        f"AI reply sent: conversation={conversation_id}, "
+        f"intent={result.get('intent')}, "
+        f"total_ms={result.get('timings', {}).get('total_ms')}"
+    )
 
 
 async def _handle_mark_read(

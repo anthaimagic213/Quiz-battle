@@ -1,6 +1,27 @@
-import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from "axios";
+import axios, {
+  AxiosInstance,
+  AxiosError,
+  InternalAxiosRequestConfig,
+} from "axios";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+// Fallback dev-only. Khi build production qua Docker, biến NEXT_PUBLIC_API_URL
+// được truyền vào lúc build (xem docker-compose.yml args). Nếu app chạy production
+// mà vẫn dùng localhost, nghĩa là build bị sai thiếu env var.
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+
+if (
+  process.env.NODE_ENV === "production" &&
+  API_URL.startsWith("http://localhost")
+) {
+  // Cảnh báo trong console — không crash app để tránh brick UI, nhưng dev thấy ngay.
+  // eslint-disable-next-line no-console
+  console.warn(
+    "[apiClient] NEXT_PUBLIC_API_URL chưa được set khi build production. " +
+      "App đang dùng fallback localhost — frontend sẽ không gọi được backend thật. " +
+      "Kiểm tra docker-compose.yml args: NEXT_PUBLIC_API_URL.",
+  );
+}
 
 // Create axios instance
 const apiClient: AxiosInstance = axios.create({
@@ -13,23 +34,32 @@ const apiClient: AxiosInstance = axios.create({
 // Request interceptor to add token
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+    const token =
+      typeof window !== "undefined"
+        ? localStorage.getItem("access_token")
+        : null;
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
   },
-  (error: AxiosError) => Promise.reject(error)
+  (error: AxiosError) => Promise.reject(error),
 );
 
 // Response interceptor to handle token refresh
 apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
-    const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
+    const originalRequest = error.config as InternalAxiosRequestConfig & {
+      _retry?: boolean;
+    };
 
     // Handle 401 (Unauthorized) - try to refresh token sai hoặc hết hạn
-    if (error.response?.status === 401 && !originalRequest._retry && typeof window !== "undefined") {
+    if (
+      error.response?.status === 401 &&
+      !originalRequest._retry &&
+      typeof window !== "undefined"
+    ) {
       originalRequest._retry = true;
 
       try {
@@ -58,7 +88,7 @@ apiClient.interceptors.response.use(
     }
 
     return Promise.reject(error);
-  }
+  },
 );
 
 export default apiClient;

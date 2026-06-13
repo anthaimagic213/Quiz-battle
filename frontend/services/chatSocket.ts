@@ -30,9 +30,9 @@ export interface ChatMessageData {
 export type ChatEvent =
   | { type: "CHAT_MESSAGE"; data: ChatMessageData }
   | {
-    type: "CONVERSATION_JOINED";
-    data: { conversation_id: string; member_ids: string[] };
-  }
+      type: "CONVERSATION_JOINED";
+      data: { conversation_id: string; member_ids: string[] };
+    }
   | { type: "CONNECTION_OPEN" }
   | { type: "CONNECTION_CLOSED" }
   | { type: "RECONNECT_SCHEDULED"; data: { attempt: number; delay_ms: number } }
@@ -65,6 +65,19 @@ class ChatSocket {
     this.token = opts.token;
     this.baseUrl =
       opts.baseUrl || process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
+
+    if (
+      typeof process !== "undefined" &&
+      process.env &&
+      process.env.NODE_ENV === "production" &&
+      this.baseUrl.startsWith("ws://localhost")
+    ) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        "[ChatSocket] NEXT_PUBLIC_WS_URL chưa được set khi build production. " +
+          "Chat realtime sẽ không kết nối được backend thật.",
+      );
+    }
   }
 
   connect(): void {
@@ -86,7 +99,9 @@ class ChatSocket {
       this.startPing();
       this.flushMessageQueue();
       // notify listeners that connection is open
-      this.listeners.forEach((cb) => cb({ type: "CONNECTION_OPEN", data: undefined }));
+      this.listeners.forEach((cb) =>
+        cb({ type: "CONNECTION_OPEN", data: undefined }),
+      );
     };
 
     socket.onmessage = (ev) => {
@@ -107,7 +122,9 @@ class ChatSocket {
       this.ws = null;
       if (this.isUnmounted) return;
       // notify listeners that connection closed
-      this.listeners.forEach((cb) => cb({ type: "CONNECTION_CLOSED", data: undefined }));
+      this.listeners.forEach((cb) =>
+        cb({ type: "CONNECTION_CLOSED", data: undefined }),
+      );
       this.scheduleReconnect();
     };
   }
@@ -120,7 +137,7 @@ class ChatSocket {
     this.reconnectAttempts = attempt;
     // notify listeners a reconnect was scheduled
     this.listeners.forEach((cb) =>
-      cb({ type: "RECONNECT_SCHEDULED", data: { attempt, delay_ms: delay } })
+      cb({ type: "RECONNECT_SCHEDULED", data: { attempt, delay_ms: delay } }),
     );
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;

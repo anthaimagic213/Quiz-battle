@@ -1,12 +1,12 @@
 from pydantic_settings import BaseSettings
-from typing import Optional
+from typing import Optional, List
 
 
 class Settings(BaseSettings):
     # Database
-    DATABASE_URL: str = "postgresql://postgres:7906@localhost:5432/quiz"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/quiz"
     POSTGRES_USER: str = "postgres"
-    POSTGRES_PASSWORD: str = "7906"
+    POSTGRES_PASSWORD: str = "postgres"
     POSTGRES_DB: str = "quiz"
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: int = 5432
@@ -16,8 +16,12 @@ class Settings(BaseSettings):
     ROOM_SESSION_TTL_SECONDS: int = 86400
 
     # App Settings
+    # QUAN TRỌNG: tất cả giá trị dưới đây là PLACEHOLDER dev-only.
+    # Trong production, .env PHẢI override chúng — nếu thiếu biến nào,
+    # Pydantic Settings sẽ dùng giá trị dưới đây (không fail).
+    # → Cần check giá trị thật qua env trước khi deploy.
     DEBUG: bool = True
-    SECRET_KEY: str = "your-secret-key-change-in-production"
+    SECRET_KEY: str = "dev-only-secret-key-replace-in-production"
 
     # JWT
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
@@ -28,8 +32,8 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     PROJECT_NAME: str = "Quiz Battle"
 
-    # CORS
-    ALLOWED_ORIGINS: list = ["http://localhost:3000", "http://localhost:8000"]
+    # CORS — production PHẢI set qua env ALLOWED_ORIGINS=https://yourdomain.com
+    ALLOWED_ORIGINS: List[str] = ["http://localhost:3000"]
 
     # Google OAuth
     GOOGLE_CLIENT_ID: Optional[str] = None
@@ -57,8 +61,8 @@ class Settings(BaseSettings):
     GEMINI_PROXY_TIMEOUT: int = 30
     GEMINI_PROXY_MAX_RETRIES: int = 2
 
-    # Qdrant
-    QDRANT_URL: str = "http://localhost:6333"
+        # Qdrant
+    QDRANT_URL: str = "http://qdrant:6333"
     QDRANT_API_KEY: Optional[str] = None
     QDRANT_VECTOR_SIZE: int = 3072
     QDRANT_DISTANCE: str = "Cosine"

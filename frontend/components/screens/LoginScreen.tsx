@@ -146,14 +146,25 @@ export default function LoginScreen() {
     }
   };
 
-  const handleGoogleLogin = () => {
+    const handleGoogleLogin = () => {
     const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "your-google-client-id-here.apps.googleusercontent.com";
     const redirectUri = process.env.NEXT_PUBLIC_GOOGLE_REDIRECT_URI || "http://localhost:3000/auth/callback";
     const scope = "openid email profile";
     const responseType = "code";
-    
+
+    if (
+      process.env.NODE_ENV === "production" &&
+      redirectUri.startsWith("http://localhost")
+    ) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        "[GoogleLogin] NEXT_PUBLIC_GOOGLE_REDIRECT_URI chưa được set khi build production. " +
+        "Google sẽ redirect về localhost sau khi đăng nhập — user sẽ không vào được app."
+      );
+    }
+
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=${responseType}&scope=${encodeURIComponent(scope)}&prompt=select_account`;
-    
+
     window.location.href = authUrl;
   };
 

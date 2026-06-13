@@ -2,8 +2,21 @@ import { WSRoomEvent } from "@/types";
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
 
+if (
+  process.env.NODE_ENV === "production" &&
+  WS_URL.startsWith("ws://localhost")
+) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    "[wsService] NEXT_PUBLIC_WS_URL chưa được set khi build production. " +
+      "WebSocket sẽ kết nối về localhost — game realtime sẽ không hoạt động.",
+  );
+}
+
 function buildWebSocketUrl(roomCode: string, token?: string) {
-  const normalizedBaseUrl = WS_URL.startsWith("http") ? WS_URL.replace(/^http/, "ws") : WS_URL;
+  const normalizedBaseUrl = WS_URL.startsWith("http")
+    ? WS_URL.replace(/^http/, "ws")
+    : WS_URL;
   const url = new URL(normalizedBaseUrl);
   url.pathname = `/ws/game/${roomCode}`;
 
@@ -33,10 +46,12 @@ class WebSocketService {
   }
 
   private scheduleReconnect(): void {
-    if (!this.shouldReconnect || !this.currentToken || !this.currentRoomCode) return;
+    if (!this.shouldReconnect || !this.currentToken || !this.currentRoomCode)
+      return;
     if (this.reconnectAttempts >= this.maxReconnectAttempts) return;
 
-    const delay = this.baseReconnectDelayMs * Math.pow(2, this.reconnectAttempts);
+    const delay =
+      this.baseReconnectDelayMs * Math.pow(2, this.reconnectAttempts);
     this.reconnectAttempts += 1;
 
     this.clearReconnectTimer();
@@ -139,7 +154,7 @@ class WebSocketService {
         JSON.stringify({
           type: eventType,
           data,
-        })
+        }),
       );
     }
   }
@@ -161,7 +176,7 @@ class WebSocketService {
     // Debug: log dispatch
     try {
       console.debug("WS dispatch:", eventType);
-    } catch (e) { }
+    } catch (e) {}
 
     if (this.listeners.has(eventType)) {
       this.listeners.get(eventType)!.forEach((callback) => {

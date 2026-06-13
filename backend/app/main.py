@@ -42,11 +42,19 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception: {type(exc).__name__}: {str(exc)}", exc_info=True)
+    # Lấy origin đầu tiên trong ALLOWED_ORIGINS để set CORS header an toàn.
+    # Nếu ALLOWED_ORIGINS trống (cấu hình sai), fallback wildcard vẫn cho phép
+    # browser đọc được response error (cần thiết để frontend không treo).
+    fallback_origin = (
+        settings.ALLOWED_ORIGINS[0]
+        if settings.ALLOWED_ORIGINS
+        else "*"
+    )
     return JSONResponse(
         status_code=500,
-        content={"detail": f"Internal server error: {str(exc)}"},
+        content={"detail": "Internal server error"},
         headers={
-            "Access-Control-Allow-Origin": "http://localhost:3000",
+            "Access-Control-Allow-Origin": fallback_origin,
             "Access-Control-Allow-Credentials": "true",
         }
     )

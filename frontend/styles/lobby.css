@@ -73,7 +73,10 @@
   font-size: 13px;
   font-weight: 800;
   cursor: pointer;
-  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease;
 }
 
 .lobby-copy-link-btn:hover {
@@ -160,7 +163,7 @@
   padding: 12px;
   text-align: center;
   transition: all 0.3s;
-  box-shadow: 0 10px 30px rgba(124, 58, 237, 0.10);
+  box-shadow: 0 10px 30px rgba(124, 58, 237, 0.1);
 }
 
 .player-chip.host {
@@ -319,27 +322,32 @@
   max-width: 86%;
   border-radius: 12px;
   padding: 8px 10px;
-  background: rgba(148, 163, 184, 0.12);
-  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: #0f172a;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
 }
 
 .chat-msg-row.me .chat-msg-bubble {
-  background: rgba(124, 58, 237, 0.22);
-  border-color: rgba(124, 58, 237, 0.45);
+  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
+  border-color: #c4b5fd;
+  color: #1e1b4b;
 }
 
 .chat-msg-row.host .chat-msg-bubble {
-  background: rgba(255, 247, 237, 0.98);
-  border-color: rgba(217, 119, 6, 0.55);
+  background: #fff7ed;
+  border-color: #fb923c;
+  color: #7c2d12;
   box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.16);
 }
 
 .chat-msg-row.host .chat-msg-name {
-  color: #7c2d12;
+  color: #9a3412;
 }
 
 .chat-msg-row.host .chat-msg-text {
-  color: #111827;
+  color: #7c2d12;
+  font-weight: 600;
 }
 
 .chat-msg-meta {
@@ -353,17 +361,19 @@
 .chat-msg-name {
   font-size: 11px;
   font-weight: 700;
-  color: var(--primary-light);
+  color: #6d28d9;
 }
 
 .chat-msg-text {
-  font-size: 12px;
-  line-height: 1.45;
+  font-size: 13px;
+  line-height: 1.5;
   word-break: break-word;
+  color: #0f172a;
+  font-weight: 500;
 }
 
 .chat-msg-time {
-  color: var(--muted);
+  color: #64748b;
   font-size: 10px;
   font-weight: 700;
 }
@@ -374,15 +384,17 @@
   letter-spacing: 0.04em;
   padding: 2px 6px;
   border-radius: 999px;
-  background: rgba(245, 158, 11, 0.2);
-  border: 1px solid rgba(217, 119, 6, 0.42);
-  color: #92400e;
+  background: #fed7aa;
+  border: 1px solid #fb923c;
+  color: #7c2d12;
 }
 
 .chat-empty {
   font-size: 12px;
   line-height: 1.45;
-  color: var(--muted);
+  color: #64748b;
+  text-align: center;
+  padding: 18px 0;
 }
 
 .chat-input-row {
@@ -500,7 +512,8 @@
 .join-form-card {
   background:
     linear-gradient(#ffffff, #ffffff) padding-box,
-    linear-gradient(135deg, rgba(124, 58, 237, 0.28), rgba(6, 182, 212, 0.22)) border-box;
+    linear-gradient(135deg, rgba(124, 58, 237, 0.28), rgba(6, 182, 212, 0.22))
+      border-box;
   border: 1px solid transparent;
   border-radius: 12px;
   padding: 14px 16px;

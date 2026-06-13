@@ -161,7 +161,11 @@
 }
 
 .dark-mode .import-format-guide {
-  background: linear-gradient(135deg, rgba(124, 58, 237, 0.12), rgba(6, 182, 212, 0.08));
+  background: linear-gradient(
+    135deg,
+    rgba(124, 58, 237, 0.12),
+    rgba(6, 182, 212, 0.08)
+  );
   border-color: rgba(124, 58, 237, 0.28);
 }
 
@@ -277,6 +281,28 @@
   background: var(--surface);
 }
 
+.dark-mode .points-select {
+  background: var(--surface2);
+  border-color: var(--border2);
+}
+
+.dark-mode .points-chip {
+  background: var(--surface);
+  color: var(--muted);
+  border-color: var(--border2);
+}
+
+.dark-mode .points-chip:hover {
+  border-color: rgba(124, 58, 237, 0.45);
+  color: #c4b5fd;
+}
+
+.dark-mode .points-chip.active {
+  background: linear-gradient(135deg, var(--primary), var(--primary-light));
+  border-color: var(--primary-light);
+  color: #ffffff;
+}
+
 .dark-mode .editor-preview {
   background: var(--surface);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
@@ -312,7 +338,11 @@
 }
 
 .dark-mode .preview-question {
-  background: linear-gradient(135deg, rgba(124, 58, 237, 0.95), rgba(6, 182, 212, 0.9));
+  background: linear-gradient(
+    135deg,
+    rgba(124, 58, 237, 0.95),
+    rgba(6, 182, 212, 0.9)
+  );
   color: #ffffff;
 }
 
@@ -321,7 +351,11 @@
 }
 
 .dark-mode .home-hero {
-  background: linear-gradient(135deg, rgba(124, 58, 237, 0.18) 0%, rgba(6, 182, 212, 0.1) 100%);
+  background: linear-gradient(
+    135deg,
+    rgba(124, 58, 237, 0.18) 0%,
+    rgba(6, 182, 212, 0.1) 100%
+  );
   border-bottom-color: var(--border2);
 }
 
@@ -331,7 +365,11 @@
 }
 
 .dark-mode .profile-reminder {
-  background: linear-gradient(135deg, rgba(6, 182, 212, 0.14), rgba(124, 58, 237, 0.12));
+  background: linear-gradient(
+    135deg,
+    rgba(6, 182, 212, 0.14),
+    rgba(124, 58, 237, 0.12)
+  );
   border-color: rgba(6, 182, 212, 0.28);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.2);
 }
@@ -343,7 +381,11 @@
 }
 
 .dark-mode .first-play-panel {
-  background: linear-gradient(135deg, rgba(124, 58, 237, 0.14), rgba(6, 182, 212, 0.08));
+  background: linear-gradient(
+    135deg,
+    rgba(124, 58, 237, 0.14),
+    rgba(6, 182, 212, 0.08)
+  );
   border-color: var(--border2);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22);
 }
@@ -441,7 +483,11 @@
 }
 
 .dark-mode .streak-card {
-  background: linear-gradient(135deg, rgba(124, 58, 237, 0.1), rgba(6, 182, 212, 0.08)) !important;
+  background: linear-gradient(
+    135deg,
+    rgba(124, 58, 237, 0.1),
+    rgba(6, 182, 212, 0.08)
+  ) !important;
   border-color: rgba(124, 58, 237, 0.24) !important;
 }
 
@@ -524,7 +570,11 @@
 }
 
 .dark-mode .room-code-preview {
-  background: linear-gradient(135deg, rgba(124, 58, 237, 0.95), rgba(6, 182, 212, 0.9));
+  background: linear-gradient(
+    135deg,
+    rgba(124, 58, 237, 0.95),
+    rgba(6, 182, 212, 0.9)
+  );
 }
 
 .dark-mode .preview-detail {
@@ -550,7 +600,11 @@
 }
 
 .dark-mode .lobby-code-block {
-  background: linear-gradient(135deg, rgba(124, 58, 237, 0.95), rgba(6, 182, 212, 0.9));
+  background: linear-gradient(
+    135deg,
+    rgba(124, 58, 237, 0.95),
+    rgba(6, 182, 212, 0.9)
+  );
   border-color: transparent;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.24);
 }
@@ -633,6 +687,50 @@
   color: var(--primary-light);
 }
 
+.dark-mode .chat-msg-text {
+  color: var(--text);
+}
+
+.dark-mode .chat-msg-bubble {
+  background: var(--surface2);
+  border-color: var(--border2);
+  color: var(--text);
+}
+
+.dark-mode .chat-msg-row.me .chat-msg-bubble {
+  background: rgba(124, 58, 237, 0.22);
+  border-color: rgba(124, 58, 237, 0.45);
+  color: #ede9fe;
+}
+
+.dark-mode .chat-msg-row.host .chat-msg-bubble {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(217, 119, 6, 0.55);
+  color: #fde68a;
+}
+
+.dark-mode .chat-msg-row.host .chat-msg-name {
+  color: #fbbf24;
+}
+
+.dark-mode .chat-msg-row.host .chat-msg-text {
+  color: #fde68a;
+}
+
+.dark-mode .chat-msg-time {
+  color: var(--muted);
+}
+
+.dark-mode .chat-host-badge {
+  background: rgba(245, 158, 11, 0.18);
+  border-color: rgba(217, 119, 6, 0.5);
+  color: #fbbf24;
+}
+
+.dark-mode .chat-empty {
+  color: var(--muted);
+}
+
 .dark-mode .chat-input {
   background: var(--surface2);
   color: var(--text);
@@ -663,7 +761,11 @@
 }
 
 .dark-mode .join-form-card {
-  background: linear-gradient(135deg, rgba(124, 58, 237, 0.85), rgba(6, 182, 212, 0.75));
+  background: linear-gradient(
+    135deg,
+    rgba(124, 58, 237, 0.85),
+    rgba(6, 182, 212, 0.75)
+  );
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.2);
 }
 
@@ -759,7 +861,7 @@
 .dark-mode .login-alert.error {
   background: rgba(239, 68, 68, 0.14);
   border-color: rgba(239, 68, 68, 0.4);
-  color: #FCA5A5;
+  color: #fca5a5;
 }
 
 .dark-mode .orb-1 {
@@ -832,8 +934,16 @@
 
 .dark-mode .register-bg {
   background:
-    radial-gradient(ellipse 60% 50% at 20% 50%, rgba(124, 58, 237, 0.16) 0%, transparent 70%),
-    radial-gradient(ellipse 50% 60% at 80% 30%, rgba(6, 182, 212, 0.12) 0%, transparent 70%);
+    radial-gradient(
+      ellipse 60% 50% at 20% 50%,
+      rgba(124, 58, 237, 0.16) 0%,
+      transparent 70%
+    ),
+    radial-gradient(
+      ellipse 50% 60% at 80% 30%,
+      rgba(6, 182, 212, 0.12) 0%,
+      transparent 70%
+    );
 }
 
 .dark-mode .register-card {
@@ -854,13 +964,13 @@
 .dark-mode .register-alert.success {
   background: rgba(16, 185, 129, 0.14);
   border-color: rgba(16, 185, 129, 0.38);
-  color: #6EE7B7;
+  color: #6ee7b7;
 }
 
 .dark-mode .register-alert.error {
   background: rgba(239, 68, 68, 0.14);
   border-color: rgba(239, 68, 68, 0.4);
-  color: #FCA5A5;
+  color: #fca5a5;
 }
 
 .dark-mode .strength-bar {
@@ -920,17 +1030,29 @@
 }
 
 .dark-mode .podium-bar.gold {
-  background: linear-gradient(to top, rgba(245, 158, 11, 0.28), rgba(245, 158, 11, 0.08));
+  background: linear-gradient(
+    to top,
+    rgba(245, 158, 11, 0.28),
+    rgba(245, 158, 11, 0.08)
+  );
   border-color: rgba(245, 158, 11, 0.38);
 }
 
 .dark-mode .podium-bar.silver {
-  background: linear-gradient(to top, rgba(148, 163, 184, 0.24), rgba(148, 163, 184, 0.08));
+  background: linear-gradient(
+    to top,
+    rgba(148, 163, 184, 0.24),
+    rgba(148, 163, 184, 0.08)
+  );
   border-color: rgba(148, 163, 184, 0.34);
 }
 
 .dark-mode .podium-bar.bronze {
-  background: linear-gradient(to top, rgba(205, 127, 50, 0.24), rgba(205, 127, 50, 0.08));
+  background: linear-gradient(
+    to top,
+    rgba(205, 127, 50, 0.24),
+    rgba(205, 127, 50, 0.08)
+  );
   border-color: rgba(205, 127, 50, 0.34);
 }
 
@@ -975,13 +1097,21 @@
 }
 
 .dark-mode .mini-board {
-  background: linear-gradient(180deg, rgba(18, 18, 26, 0.96), rgba(10, 10, 15, 0.98));
+  background: linear-gradient(
+    180deg,
+    rgba(18, 18, 26, 0.96),
+    rgba(10, 10, 15, 0.98)
+  );
   border-color: var(--border2);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.24);
 }
 
 .dark-mode .mini-board-header {
-  background: linear-gradient(135deg, rgba(124, 58, 237, 0.16), rgba(14, 165, 233, 0.1));
+  background: linear-gradient(
+    135deg,
+    rgba(124, 58, 237, 0.16),
+    rgba(14, 165, 233, 0.1)
+  );
   border-bottom-color: var(--border);
 }
 

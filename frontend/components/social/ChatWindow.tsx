@@ -269,27 +269,28 @@ export default function ChatWindow({
         )}
       </div>
 
-      <form className="chat-input-form" onSubmit={handleSendMessage}>
+            <form className="chat-input-form" onSubmit={handleSendMessage}>
         <textarea
           ref={messageInputRef}
           className="chat-input"
-          placeholder="Nhập tin nhắn (Shift+Enter để xuống dòng)..."
+          placeholder="Nhắn gì đó..."
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          rows={3}
+          rows={1}
           disabled={isSending}
         />
         <button
           type="submit"
           className="chat-send-btn"
           disabled={!inputValue.trim() || isSending}
+          aria-label="Gửi tin nhắn"
         >
-          {isSending ? "⟳" : "📤"} Gửi
+          ➤
         </button>
         {!isSocketReady && (
-          <button type="button" className="chat-reconnect-btn" onClick={handleManualReconnect}>
-            🔌 Thử kết nối lại
+          <button type="button" className="chat-reconnect-btn" onClick={handleManualReconnect} aria-label="Kết nối lại">
+            🔌
           </button>
         )}
       </form>

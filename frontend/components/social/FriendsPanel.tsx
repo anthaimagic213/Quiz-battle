@@ -170,6 +170,8 @@ export default function FriendsPanel({ isOpen, onClose }: FriendsPanelProps) {
           <FriendsSearch
             onFriendSelected={handleSelectFriend}
             onRequestSent={() => void loadData()}
+            friends={friends}
+            currentUserId={currentUserId}
           />
         )}
 

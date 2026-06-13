@@ -5,6 +5,7 @@ export interface User {
   id: UUID;
   username: string;
   full_name?: string;
+  email?: string;
   avatar_url?: string;
 }
 

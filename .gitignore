@@ -41,13 +41,20 @@ yarn-error.log
 out/
 dist/
 
-# Environment files
+# Environment files — ignore MỌI .env, chỉ cho phép file .example
 .env
-.env.local
-.env.*.local
-.env.production.local
+.env.*
 backend/.env
+backend/.env.*
+frontend/.env
+frontend/.env.*
 frontend/.env.local
+# Allow only template files (negation phải đặt SAU rule ignore ở trên)
+!.env.example
+!.env.example.*
+!backend/.env.example
+!frontend/.env.local.example
+!frontend/.env.production.example
 
 # IDE
 .vscode/

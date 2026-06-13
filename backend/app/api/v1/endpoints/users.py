@@ -47,18 +47,22 @@ def search_users(
     q: str = Query(..., min_length=1),
     page: int = Query(1, ge=1),
     limit: int = Query(10, ge=1, le=50),
-    current_user: UUID = Depends(get_current_user), # Đã thêm dependency lấy user hiện tại
+    current_user: UUID = Depends(get_current_user),  # Đã thêm dependency lấy user hiện tại
     db: Session = Depends(get_db),
 ):
-    """Search for users by username or full name (Đã đẩy lên trên để fix triệt để lỗi 422)"""
+    """Search for users by username, full name, or email (Đã đẩy lên trên để fix triệt để lỗi 422)"""
     offset = (page - 1) * limit
     search_term = f"%{q}%"
 
-    # Tìm kiếm user theo tên/username và loại trừ chính bản thân mình ra (User.id != current_user)
+    # Tìm kiếm user theo username / full_name / email và loại trừ chính bản thân mình ra (User.id != current_user)
     query = db.query(User).filter(
-        (User.id != current_user) & 
-        ((User.username.ilike(search_term)) | (User.full_name.ilike(search_term)))
-    )
+        (User.id != current_user) &
+        (
+            (User.username.ilike(search_term))
+            | (User.full_name.ilike(search_term))
+            | (User.email.ilike(search_term))
+        )
+    )   
 
     total = query.count()
     users = query.offset(offset).limit(limit).all()

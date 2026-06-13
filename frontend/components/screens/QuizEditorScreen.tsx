@@ -25,7 +25,14 @@ interface EditorQuestion {
 
 const letters = ["A", "B", "C", "D", "E", "F", "G", "H"];
 const maxChoiceOptions = 8;
-const timeOptions = [10, 20, 30, 60];
+const timeOptions = [10, 20, 30, 60,90, 120];
+const defaultPoints = 100;
+const minPoints = 50;
+const maxPoints = 300;
+const pointsOptions = Array.from(
+  { length: (maxPoints - minPoints) / 10 + 1 },
+  (_, index) => minPoints + index * 10
+);
 
 const initialQuestions: EditorQuestion[] = [
   {
@@ -186,16 +193,22 @@ export default function QuizEditorScreen({ quizId }: QuizEditorScreenProps) {
         setQuizTitle(quiz.title);
         setVisibility(quiz.is_public ? "public" : "private");
 
-        if (quiz.questions && quiz.questions.length > 0) {
+                if (quiz.questions && quiz.questions.length > 0) {
           const convertedQuestions = quiz.questions.map((q) => {
             const options = q.answer_options?.map((opt) => opt.content) || ["", "", "", ""];
             const correctIndex = q.answer_options?.findIndex((opt) => opt.is_correct) ?? 0;
+            const rawPoints = q.points ?? defaultPoints;
+            const clampedPoints = pointsOptions.includes(rawPoints)
+              ? rawPoints
+              : pointsOptions.reduce((closest, current) =>
+                  Math.abs(current - rawPoints) < Math.abs(closest - rawPoints) ? current : closest
+                );
             return {
               id: q.id,
               text: q.content,
               type: q.question_type as QuestionType,
               timeLimit: q.time_limit || 30,
-              points: q.points || 100,
+              points: clampedPoints,
               options,
               correctIndex: correctIndex >= 0 ? correctIndex : 0,
             };
@@ -262,13 +275,13 @@ export default function QuizEditorScreen({ quizId }: QuizEditorScreenProps) {
     });
   };
 
-  const handleAddQuestion = () => {
+    const handleAddQuestion = () => {
     const newQuestion: EditorQuestion = {
       id: `q${Date.now()}`,
       text: "Câu hỏi mới...",
       type: "MCQ",
       timeLimit: 30,
-      points: 100,
+      points: defaultPoints,
       options: ["", "", "", ""],
       correctIndex: 0,
     };
@@ -374,18 +387,24 @@ export default function QuizEditorScreen({ quizId }: QuizEditorScreenProps) {
 
     setIsImporting(true);
     try {
-      const importedQuestions = await importQuestions(importFile);
-      
+            const importedQuestions = await importQuestions(importFile);
+
       // Convert imported questions to EditorQuestion format
-      const convertedQuestions = importedQuestions.map((q) => ({
-        id: q.id || `q${Date.now()}`,
-        text: q.text,
-        type: q.type,
-        timeLimit: q.timeLimit || 30,
-        points: q.points || 100,
-        options: q.options,
-        correctIndex: q.correctIndex || 0,
-      }));
+      const convertedQuestions = importedQuestions.map((q) => {
+        const rawPoints = q.points ?? defaultPoints;
+        const safePoints = pointsOptions.includes(rawPoints)
+          ? rawPoints
+          : defaultPoints;
+        return {
+          id: q.id || `q${Date.now()}`,
+          text: q.text,
+          type: q.type,
+          timeLimit: q.timeLimit || 30,
+          points: safePoints,
+          options: q.options,
+          correctIndex: q.correctIndex || 0,
+        };
+      });
 
       setQuestions(convertedQuestions);
       setActiveIndex(0);
@@ -402,12 +421,12 @@ export default function QuizEditorScreen({ quizId }: QuizEditorScreenProps) {
   };
 
   const handleDeleteQuestion = () => {
-    if (questions.length === 1) {
+        if (questions.length === 1) {
       updateActiveQuestion({
         text: "",
         type: "MCQ",
         timeLimit: 30,
-        points: 100,
+        points: defaultPoints,
         options: ["", "", "", ""],
         correctIndex: 0,
       });
@@ -842,8 +861,20 @@ export default function QuizEditorScreen({ quizId }: QuizEditorScreenProps) {
                 </button>
               ))}
             </div>
-            <div className="qe-score">
-              Điểm: <span>{activeQuestion.points}</span>
+                        <div className="qe-score-wrap">
+              <div className="qe-score-label">🏆 Điểm:</div>
+              <div className="points-select" role="group" aria-label="Chọn điểm số cho câu hỏi">
+                {pointsOptions.map((points) => (
+                  <button
+                    className={`points-chip${activeQuestion.points === points ? " active" : ""}`}
+                    key={points}
+                    onClick={() => updateActiveQuestion({ points })}
+                    type="button"
+                  >
+                    {points}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -867,26 +898,36 @@ export default function QuizEditorScreen({ quizId }: QuizEditorScreenProps) {
               </button>
             ) : null}
           </div>
-          <div className="options-editor">
+                    <div className="options-editor">
             {visibleOptions.map((option, index) => (
               <div
                 className={`option-editor${activeQuestion.correctIndex === index ? " correct" : ""}`}
                 key={optionLetter(index)}
-                onClick={() => updateActiveQuestion({ correctIndex: index })}
-                role="button"
-                tabIndex={0}
+                onClick={(event) => {
+                  // Không chọn đáp án khi click vào input/button bên trong
+                  const target = event.target as HTMLElement;
+                  if (target.closest("input, button")) return;
+                  updateActiveQuestion({ correctIndex: index });
+                }}
                 onKeyDown={(event) => {
+                  // Bỏ qua nếu user đang gõ vào input bên trong (để gõ khoảng trắng bình thường)
+                  const target = event.target as HTMLElement;
+                  if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") return;
+
                   if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
                     updateActiveQuestion({ correctIndex: index });
                   }
                 }}
+                role="button"
+                tabIndex={0}
               >
                 <div className="opt-letter">{optionLetter(index)}</div>
                 <input
                   className="opt-input"
                   value={option}
                   onChange={(event) => handleOptionChange(index, event)}
+                  onKeyDown={(event) => event.stopPropagation()}
                   readOnly={activeQuestion.type === "TRUE_FALSE"}
                   placeholder={`Đáp án ${optionLetter(index)}`}
                 />

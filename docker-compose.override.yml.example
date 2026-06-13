@@ -1,0 +1,45 @@
+# ============================================================
+# docker-compose.override.yml — CHỈ DÙNG CHO LOCAL DEVELOPMENT
+#
+# File này KHÔNG commit lên git (.gitignore đã chặn).
+# Copy file này về cùng thư mục docker-compose.yml khi dev.
+#
+# Cách dùng:
+#   cp docker-compose.override.yml.example docker-compose.override.yml
+#   docker compose up -d --build
+#
+# Override này sẽ:
+#   - Mở lại port DB / Redis / Qdrant ra localhost để debug
+#   - Mount source code vào container (hot-reload)
+#   - Dùng NODE_ENV=development, --reload cho uvicorn
+#   - Bind mount source backend/frontend vào container
+# ============================================================
+
+services:
+  db:
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  redis:
+    ports:
+      - "127.0.0.1:6379:6379"
+
+  qdrant:
+    ports:
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
+
+  backend:
+    volumes:
+      - ./backend:/app
+    command: python -B -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      NODE_ENV: development
+      WATCHPACK_POLLING: "true"
+    command: npm run dev
